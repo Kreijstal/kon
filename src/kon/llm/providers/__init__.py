@@ -4,6 +4,10 @@ from ..models import ApiType
 PROVIDER_API_BY_NAME: dict[str, ApiType] = {
     "openai": ApiType.OPENAI_COMPLETIONS,
     "zhipu": ApiType.OPENAI_COMPLETIONS,
+    "zaicodingplan": ApiType.OPENAI_COMPLETIONS,
+    "opencode": ApiType.OPENAI_COMPLETIONS,
+    "kilocode": ApiType.OPENAI_COMPLETIONS,
+    "openrouter": ApiType.OPENAI_COMPLETIONS,
     "deepseek": ApiType.OPENAI_COMPLETIONS,
     "xai": ApiType.XAI_RESPONSES,
     "github-copilot": ApiType.GITHUB_COPILOT,

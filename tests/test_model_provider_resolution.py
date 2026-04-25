@@ -1,4 +1,6 @@
-from kon.llm.models import ApiType, get_model
+import pytest
+
+from kon.llm.models import ApiType, fetch_all_available_models, get_model
 
 
 def test_get_model_prefers_provider_when_specified():
@@ -13,10 +15,10 @@ def test_get_model_prefers_provider_when_specified():
 
 
 def test_get_model_falls_back_to_id_lookup():
-    model = get_model("glm-5.1")
+    model = get_model("claude-sonnet-4.6-copilot")
 
     assert model is not None
-    assert model.provider == "zhipu"
+    assert model.provider == "github-copilot"
 
 
 def test_get_model_prefers_provider_for_gpt_5_5():
@@ -74,3 +76,15 @@ def test_get_model_resolves_gpt_5_6_copilot_models():
         assert model.supports_images is True
         assert model.supports_thinking is True
         assert model.uses_responses_lite is False
+
+
+@pytest.mark.asyncio
+async def test_fetch_all_available_models_keeps_deepseek_fallback(monkeypatch):
+    async def fail_fetch(*args, **kwargs):
+        raise RuntimeError("model listing unavailable")
+
+    monkeypatch.setattr("kon.llm.models.fetch_models_from_api", fail_fetch)
+
+    models = await fetch_all_available_models()
+
+    assert any(m.id == "deepseek-v4-flash" and m.provider == "deepseek" for m in models)

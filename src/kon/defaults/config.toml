@@ -87,8 +87,23 @@ enabled = false
 # Audio playback volume from 0.0 (muted) to 1.0 (full volume).
 volume = 0.5
 
+# =============================================================================
+# Provider-specific configuration (optional)
+# =============================================================================
+
+# Example: OpenRouter provider
+# [providers.openrouter]
+# api_key = "sk-or-v1-your-api-key"
+#
+# Then set in [llm]:
+# default_provider = "openrouter"
+# default_model = "qwen/qwen3.6-plus-preview:free"
+#
+# Available models: https://openrouter.ai/models
+#
 # Example: DeepSeek provider
-# export DEEPSEEK_API_KEY="sk-your-api-key"
+# [providers.deepseek]
+# api_key = "sk-your-api-key"
 #
 # Then set in [llm]:
 # default_provider = "deepseek"

@@ -223,6 +223,14 @@ class FloatingList[T](Widget):
             self._selected_index = 0
         self._render_key += 1
 
+    def move_page(self, direction: int) -> None:
+        if not self._items:
+            return
+
+        offset = self._window_size if direction > 0 else -self._window_size
+        self._selected_index = max(0, min(self._selected_index + offset, len(self._items) - 1))
+        self._render_key += 1
+
     def render(self) -> Text:
         _ = self._render_key  # Subscribe to changes
 

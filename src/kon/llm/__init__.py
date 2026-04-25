@@ -2,6 +2,7 @@ from .base import DEFAULT_THINKING_LEVELS, BaseProvider, LLMStream, ProviderConf
 from .models import (
     ApiType,
     Model,
+    fetch_all_available_models,
     get_all_models,
     get_max_tokens,
     get_model,
@@ -40,6 +41,7 @@ __all__ = [
     "clear_openai_credentials",
     "clear_xai_credentials",
     "copilot_login",
+    "fetch_all_available_models",
     "get_all_models",
     "get_copilot_token",
     "get_max_tokens",

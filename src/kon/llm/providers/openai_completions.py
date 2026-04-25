@@ -1,4 +1,5 @@
 import json
+import os
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from typing import Any, Literal, cast
@@ -75,6 +76,7 @@ def _detect_compat(provider: str, base_url: str, model: str = "") -> OpenAICompl
     is_zai = (
         normalized_provider == "zai"
         or normalized_provider == "zhipu"
+        or normalized_provider == "zaicodingplan"
         or "api.z.ai" in normalized_base_url
     )
     is_deepseek = normalized_provider == "deepseek" or "api.deepseek.com" in normalized_base_url
@@ -123,8 +125,79 @@ class OpenAICompletionsProvider(BaseProvider):
     def __init__(self, config: ProviderConfig):
         super().__init__(config)
 
+        provider = config.provider or ""
+        base_url = config.base_url or ""
+        is_opencode = provider == "opencode" or "opencode.ai" in base_url
+        is_kilocode = provider == "kilocode" or "api.kilo.ai" in base_url
+        is_openrouter = provider == "openrouter" or "openrouter.ai" in base_url
+
+        # Try to get API key from config file for specific providers
+        provider_config_api_key = None
+        if config.provider:
+            try:
+                import tomllib
+
+                from ...config import get_config_dir
+
+                config_file = get_config_dir() / "config.toml"
+                if config_file.exists():
+                    data = tomllib.loads(config_file.read_text(encoding="utf-8"))
+                    providers = data.get("providers", {})
+                    provider_config = providers.get(config.provider, {})
+                    provider_config_api_key = provider_config.get("api_key")
+            except Exception:
+                pass
+
+        # OpenCode: free, no auth - requires empty API key
+        if is_opencode:
+            # OpenAI SDK rejects empty api_key, so we use a workaround:
+            # pass a placeholder, then override self._client.api_key = ""
+            self._client = AsyncOpenAI(api_key="opencode-placeholder", base_url=base_url)
+            self._client.api_key = ""  # Restore empty key - creates "Bearer " header
+            self._compat = _detect_compat(provider, base_url)
+            return
+
+        # Kilocode: requires custom headers
+        if is_kilocode:
+            api_key = (
+                config.api_key or provider_config_api_key or os.environ.get("KILOCODE_API_KEY")
+            )
+            if not api_key:
+                raise ValueError(
+                    "No API key found for kilocode. Set KILOCODE_API_KEY environment variable."
+                )
+            self._client = AsyncOpenAI(
+                api_key=api_key,
+                base_url=base_url or "https://api.kilo.ai/api/openrouter",
+                timeout=kon_config.llm.request_timeout_seconds,
+                default_headers={"x-api-key": api_key, "X-KILOCODE-EDITORNAME": "kon"},
+            )
+            self._compat = _detect_compat(provider, base_url)
+            return
+
+        # OpenRouter: standard OpenAI-compatible API
+        if is_openrouter:
+            api_key = (
+                config.api_key or provider_config_api_key or os.environ.get("OPENROUTER_API_KEY")
+            )
+            if not api_key:
+                raise ValueError(
+                    "No API key found for openrouter. Set OPENROUTER_API_KEY environment variable."
+                )
+            self._client = AsyncOpenAI(
+                api_key=api_key,
+                base_url=base_url or "https://openrouter.ai/api/v1",
+                timeout=kon_config.llm.request_timeout_seconds,
+                default_headers={
+                    "HTTP-Referer": "https://github.com/sst/opencode",
+                    "X-Title": "kon",
+                },
+            )
+            self._compat = _detect_compat(provider, base_url)
+            return
+
         api_key = resolve_api_key(
-            config.api_key,
+            config.api_key or provider_config_api_key,
             env_vars=self._env_vars_for_provider(config),
             base_url=config.base_url,
             auth_mode=config.openai_compat_auth_mode,
@@ -152,6 +225,8 @@ class OpenAICompletionsProvider(BaseProvider):
 
         if provider == "deepseek" or "api.deepseek.com" in base_url:
             return ("DEEPSEEK_API_KEY", "OPENAI_API_KEY")
+        if provider == "zaicodingplan":
+            return ("ZAICODINGPLAN_API_KEY", "OPENAI_API_KEY")
         if provider in {"zai", "zhipu"} or "api.z.ai" in base_url:
             return ("ZAI_API_KEY", "OPENAI_API_KEY")
 
@@ -173,8 +248,14 @@ class OpenAICompletionsProvider(BaseProvider):
         temp = temperature if temperature is not None else self.config.temperature
         max_tok = max_tokens if max_tokens is not None else self.config.max_tokens
 
+        # Resolve the actual model ID from the Model definition
+        from ..models import get_model
+
+        model_obj = get_model(self.config.model, self.config.provider)
+        actual_model_id = model_obj.id if model_obj else self.config.model
+
         create_kwargs: dict[str, Any] = {
-            "model": self.config.model,
+            "model": actual_model_id,
             "messages": openai_messages,
             "stream": True,
             "stream_options": {"include_usage": True},

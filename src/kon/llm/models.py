@@ -250,3 +250,139 @@ def get_models_by_provider(provider: str) -> list[Model]:
 def get_max_tokens(model_id: str) -> int:
     model = MODELS.get(model_id)
     return model.max_tokens if model else DEFAULT_MAX_TOKENS
+
+
+# Providers that support dynamic model listing via /models endpoint
+DYNAMIC_MODEL_PROVIDERS: frozenset[str] = frozenset(
+    {"opencode", "kilocode", "zaicodingplan", "zhipu", "openai", "openrouter", "deepseek"}
+)
+
+# Default base URLs for dynamic providers
+PROVIDER_DEFAULT_BASE_URLS: dict[str, str] = {
+    "opencode": "https://opencode.ai/zen/v1",
+    "kilocode": "https://api.kilo.ai/api/openrouter",
+    "zaicodingplan": "https://api.z.ai/api/coding/paas/v4",
+    "zhipu": "https://api.z.ai/api/coding/paas/v4",
+    "openai": "https://api.openai.com/v1",
+    "openrouter": "https://openrouter.ai/api/v1",
+    "deepseek": "https://api.deepseek.com",
+}
+
+
+async def fetch_models_from_api(
+    base_url: str, api_key: str | None = None, provider: str | None = None
+) -> list[str]:
+    """Fetch available models from an OpenAI-compatible /models endpoint.
+
+    Args:
+        base_url: The API base URL
+        api_key: Optional API key (some providers don't need one)
+        provider: Provider name for special handling (e.g., 'opencode', 'kilocode')
+
+    Returns:
+        List of model IDs available from the API
+    """
+    from openai import AsyncOpenAI
+
+    # Handle provider-specific requirements
+    is_opencode = provider == "opencode" or "opencode.ai" in base_url
+    is_kilocode = provider == "kilocode" or "api.kilo.ai" in base_url
+    is_openrouter = provider == "openrouter" or "openrouter.ai" in base_url
+
+    if is_opencode:
+        # OpenCode requires empty API key
+        client = AsyncOpenAI(api_key="", base_url=base_url)
+    elif is_kilocode:
+        if not api_key:
+            raise ValueError("Kilocode requires an API key")
+        client = AsyncOpenAI(
+            api_key=api_key,
+            base_url=base_url,
+            default_headers={"x-api-key": api_key, "X-KILOCODE-EDITORNAME": "kon"},
+        )
+    elif is_openrouter:
+        # OpenRouter /models endpoint is public, no key needed for listing
+        client = AsyncOpenAI(api_key=api_key or "sk-placeholder", base_url=base_url)
+    else:
+        if not api_key:
+            api_key = "placeholder"  # Some APIs don't require auth
+        client = AsyncOpenAI(api_key=api_key, base_url=base_url)
+
+    try:
+        models = await client.models.list()
+        return [m.id for m in models.data]
+    finally:
+        await client.close()
+
+
+async def fetch_all_available_models(
+    provider_configs: dict[str, dict] | None = None,
+) -> list[Model]:
+    """Fetch all available models, combining hardcoded and dynamic models.
+
+    Args:
+        provider_configs: Optional dict of provider configs from config.toml
+            e.g., {"opencode": {"base_url": "...", "api_key": "..."}}
+
+    Returns:
+        List of Model objects, with dynamic models for supported providers
+    """
+    import asyncio
+    import os
+
+    models: list[Model] = list(MODELS.values())
+    known_models = {(model.provider, model.id) for model in models}
+
+    # Fetch dynamic models for each dynamic provider
+    async def fetch_for_provider(provider: str) -> list[Model]:
+        provider_models: list[Model] = []
+
+        base_url = PROVIDER_DEFAULT_BASE_URLS.get(provider, "")
+        api_key: str | None = None
+
+        # Get config from provider_configs if available
+        if provider_configs and provider in provider_configs:
+            cfg = provider_configs[provider]
+            base_url = cfg.get("base_url") or base_url
+            api_key = cfg.get("api_key")
+
+        # Fall back to environment variables
+        if not api_key:
+            env_var = f"{provider.upper().replace('-', '_')}_API_KEY"
+            api_key = os.environ.get(env_var)
+
+        if not base_url:
+            return provider_models
+
+        try:
+            model_ids = await fetch_models_from_api(base_url, api_key, provider)
+            for model_id in model_ids:
+                provider_models.append(
+                    Model(
+                        id=model_id,
+                        provider=provider,
+                        api=ApiType.OPENAI_COMPLETIONS,
+                        base_url=base_url,
+                        max_tokens=8192,
+                        supports_images=False,
+                        supports_thinking=True,
+                    )
+                )
+        except Exception:
+            # If fetch fails, return empty list for this provider
+            pass
+
+        return provider_models
+
+    # Fetch all dynamic providers in parallel
+    tasks = [fetch_for_provider(p) for p in DYNAMIC_MODEL_PROVIDERS]
+    results = await asyncio.gather(*tasks)
+
+    for provider_models in results:
+        for model in provider_models:
+            key = (model.provider, model.id)
+            if key not in known_models:
+                models.append(model)
+                known_models.add(key)
+
+    return models

@@ -29,7 +29,11 @@ ENV_API_KEY_MAP: dict[str, str] = {
     "openai": "OPENAI_API_KEY",
     "google": "GEMINI_API_KEY",
     "azure-ai-foundry": "AZURE_AI_FOUNDRY_API_KEY",
+    "zaicodingplan": "ZAICODINGPLAN_API_KEY",
+    "kilocode": "KILOCODE_API_KEY",
     "deepseek": "DEEPSEEK_API_KEY",
+    "xai": "XAI_API_KEY",
+    # opencode doesn't need an API key (free, no auth)
 }
 
 

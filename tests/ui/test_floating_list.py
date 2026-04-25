@@ -48,5 +48,23 @@ def test_move_with_no_items_is_noop() -> None:
 
     floating_list.move_up()
     floating_list.move_down()
+    floating_list.move_page(1)
 
     assert floating_list.selected_index == 0
+
+
+def test_move_page_clamps_to_visible_window_size() -> None:
+    floating_list: FloatingList[str] = FloatingList(window_size=5)
+    floating_list.update_items(_make_items(12))
+
+    floating_list.move_page(1)
+    assert floating_list.selected_index == 5
+
+    floating_list.move_page(1)
+    assert floating_list.selected_index == 10
+
+    floating_list.move_page(1)
+    assert floating_list.selected_index == 11
+
+    floating_list.move_page(-1)
+    assert floating_list.selected_index == 6

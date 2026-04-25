@@ -92,7 +92,8 @@ def _get_textarea_theme() -> TextAreaTheme:
 
 class Kon(TextArea):
     BINDINGS: ClassVar[list] = [
-        Binding("ctrl+backspace", "delete_word_left", "Delete previous word", show=False)
+        Binding("ctrl+backspace", "delete_word_left", "Delete previous word", show=False),
+        Binding("ctrl+z", "app.suspend_process", "Suspend", priority=True),
     ]
 
     class ScrollInfo(Message):
@@ -199,6 +200,8 @@ class InputBox(Vertical):
         Binding("escape", "cancel", "Cancel", priority=False),  # Lower priority so Shift+Enter win
         Binding("up", "cursor_up", "Up", priority=True),
         Binding("down", "cursor_down", "Down", priority=True),
+        Binding("pageup", "page_up", "Page up", priority=True),
+        Binding("pagedown", "page_down", "Page down", priority=True),
         Binding("tab", "tab_complete", "Tab complete", priority=True),
     ]
 
@@ -715,6 +718,14 @@ class InputBox(Vertical):
         else:
             textarea.action_cursor_line_end()
 
+    def action_page_up(self) -> None:
+        if self._is_completing:
+            self.post_message(self.CompletionMove(-1, page=True))
+
+    def action_page_down(self) -> None:
+        if self._is_completing:
+            self.post_message(self.CompletionMove(1, page=True))
+
     def action_tab_complete(self) -> None:
         """Handle Tab key for path completion."""
         self.run_worker(self._do_tab_complete())
@@ -953,9 +964,10 @@ class InputBox(Vertical):
             self.allow_submit = allow_submit
 
     class CompletionMove(Message):
-        def __init__(self, direction: int) -> None:
+        def __init__(self, direction: int, page: bool = False) -> None:
             super().__init__()
             self.direction = direction
+            self.page = page
 
     class SearchUpdate(Message):
         def __init__(self, query: str) -> None:
