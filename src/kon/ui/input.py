@@ -39,10 +39,14 @@ if TYPE_CHECKING:
     pass
 
 
-# Support both legacy ESC+CR and modern CSI-u sequences for modified Enter keys.
+# Preserve ESC+CR as Shift+Enter: some terminals emit that legacy sequence instead
+# of CSI-u modified enter codes. Alt+Enter is handled via CSI-u when available,
+# with ESC+LF as a legacy fallback used by some terminals.
 ANSI_SEQUENCES_KEYS["\x1b\r"] = (SimpleNamespace(value="shift+enter"),)  # type: ignore[assignment]
+ANSI_SEQUENCES_KEYS["\x1b\n"] = (SimpleNamespace(value="alt+enter"),)  # type: ignore[assignment]
 ANSI_SEQUENCES_KEYS["\x1b[13;3u"] = (SimpleNamespace(value="alt+enter"),)  # type: ignore[assignment]
 ANSI_SEQUENCES_KEYS["\x1b[13;2u"] = (SimpleNamespace(value="shift+enter"),)  # type: ignore[assignment]
+ANSI_SEQUENCES_KEYS["\x1b[13;5u"] = (SimpleNamespace(value="ctrl+enter"),)  # type: ignore[assignment]
 
 _PASTE_LINE_THRESHOLD = 5
 _PASTE_CHAR_THRESHOLD = 500
@@ -196,8 +200,8 @@ class InputBox(Vertical):
         Binding("ctrl+v", "paste_clipboard", "Paste", priority=True),
         Binding("enter", "submit", "Send", priority=True),
         Binding("ctrl+j,shift+enter", "newline", "New line", priority=True),
-        Binding("alt+enter", "steer_submit", "Steer", priority=True),
-        Binding("escape", "cancel", "Cancel", priority=False),  # Lower priority so Shift+Enter win
+        Binding("alt+enter,ctrl+enter", "steer_submit", "Queue", priority=True),
+        Binding("escape", "cancel", "Cancel", priority=True),
         Binding("up", "cursor_up", "Up", priority=True),
         Binding("down", "cursor_down", "Down", priority=True),
         Binding("pageup", "page_up", "Page up", priority=True),
@@ -613,7 +617,7 @@ class InputBox(Vertical):
             return
         if getattr(self.app, "start_queue_edit", lambda: False)():
             return
-        self._do_submit(steer=False)
+        self._do_submit(steer=True)
 
     def action_steer_submit(self) -> None:
         if self._is_completing:
@@ -621,7 +625,7 @@ class InputBox(Vertical):
             self._active_provider = None
             self._completion_prefix = ""
             self.post_message(self.CompletionHide())
-        self._do_submit(steer=True)
+        self._do_submit(steer=False)
 
     def _do_submit(self, steer: bool = False) -> None:
         input_text = self.text.strip()

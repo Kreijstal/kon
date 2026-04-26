@@ -220,8 +220,8 @@ class ChatLog(VerticalScroll):
                 (
                     ("ctrl+c", "clear input"),
                     ("ctrl+c x2", "exit"),
-                    ("enter", "queue"),
-                    ("alt+enter", "steer"),
+                    ("enter", "steer"),
+                    ("alt+enter", "queue"),
                 ),
                 (
                     ("↑/↓", "select queue"),

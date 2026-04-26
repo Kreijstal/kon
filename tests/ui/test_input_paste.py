@@ -158,3 +158,11 @@ def test_legacy_esc_cr_remains_shift_enter_mapping() -> None:
 
 def test_alt_enter_uses_csi_u_mapping() -> None:
     assert _sequence_value("\x1b[13;3u") == "alt+enter"
+
+
+def test_legacy_esc_lf_maps_to_alt_enter() -> None:
+    assert _sequence_value("\x1b\n") == "alt+enter"
+
+
+def test_ctrl_enter_uses_csi_u_mapping() -> None:
+    assert _sequence_value("\x1b[13;5u") == "ctrl+enter"
