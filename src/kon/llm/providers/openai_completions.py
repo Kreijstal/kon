@@ -42,6 +42,7 @@ from ..base import (
     make_http_client,
     resolve_api_key,
 )
+from ..models import get_model
 from .openai_compat import supports_developer_role
 from .sanitize import sanitize_surrogates
 
@@ -385,6 +386,13 @@ class OpenAICompletionsProvider(BaseProvider):
         except Exception as e:
             yield StreamError(error=format_error(e))
 
+    def _supports_vision(self) -> bool:
+        """Check if the current model supports image input."""
+        model = get_model(self.config.model, self.config.provider)
+        if model is None:
+            return False
+        return model.supports_images or model.vision_model is not None
+
     def _convert_messages(
         self,
         messages: list[Message],
@@ -407,6 +415,7 @@ class OpenAICompletionsProvider(BaseProvider):
                 cast(ChatCompletionMessageParam, {"role": role, "content": prompt_content})
             )
 
+        supports_vision = self._supports_vision()
         pending_images: list[ImageContent] = []
 
         for msg in messages:
@@ -414,7 +423,7 @@ class OpenAICompletionsProvider(BaseProvider):
                 if pending_images:
                     result.append(self._create_image_user_message(pending_images))
                     pending_images = []
-                result.append(self._convert_user_message(msg))
+                result.append(self._convert_user_message(msg, supports_vision=supports_vision))
             elif isinstance(msg, AssistantMessage):
                 if pending_images:
                     result.append(self._create_image_user_message(pending_images))
@@ -422,11 +431,12 @@ class OpenAICompletionsProvider(BaseProvider):
                 result.append(self._convert_assistant_message(msg))
             elif isinstance(msg, ToolResultMessage):
                 result.append(self._convert_tool_result(msg))
-                for item in msg.content:
-                    if isinstance(item, ImageContent):
-                        pending_images.append(item)
+                if supports_vision:
+                    for item in msg.content:
+                        if isinstance(item, ImageContent):
+                            pending_images.append(item)
 
-        if pending_images:
+        if supports_vision and pending_images:
             result.append(self._create_image_user_message(pending_images))
 
         return result
@@ -444,7 +454,9 @@ class OpenAICompletionsProvider(BaseProvider):
             )
         return cast(ChatCompletionMessageParam, {"role": "user", "content": parts})
 
-    def _convert_user_message(self, msg: UserMessage) -> ChatCompletionMessageParam:
+    def _convert_user_message(
+        self, msg: UserMessage, supports_vision: bool = True
+    ) -> ChatCompletionMessageParam:
         if isinstance(msg.content, str):
             return cast(
                 ChatCompletionMessageParam,
@@ -456,7 +468,7 @@ class OpenAICompletionsProvider(BaseProvider):
         for item in msg.content:
             if isinstance(item, TextContent):
                 parts.append({"type": "text", "text": sanitize_surrogates(item.text)})
-            elif isinstance(item, ImageContent):
+            elif isinstance(item, ImageContent) and supports_vision:
                 parts.append(
                     {
                         "type": "image_url",
