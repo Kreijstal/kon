@@ -61,8 +61,9 @@ class OpenAICompletionsCompat:
     supports_store: bool = True
     supports_developer_role: bool = True
     supports_reasoning_effort: bool = True
+    supports_assistant_content_array: bool = True
     max_tokens_field: Literal["max_tokens", "max_completion_tokens"] = "max_completion_tokens"
-    thinking_format: Literal["openai", "zai", "qwen", "llama_gemma"] = "openai"
+    thinking_format: Literal["openai", "zai", "qwen", "llama_gemma", "deepseek"] = "openai"
     # Per-model reasoning effort map. When set, the provider maps Kon's thinking
     # levels to the model's effort vocabulary (e.g. "xhigh" -> "max").
     # Only used when thinking_format is "zai" and the model supports effort levels.
@@ -97,7 +98,11 @@ def _detect_compat(provider: str, base_url: str, model: str = "") -> OpenAICompl
 
     if is_deepseek:
         return OpenAICompletionsCompat(
-            supports_store=False, supports_developer_role=False, supports_reasoning_effort=False
+            supports_store=False,
+            supports_developer_role=False,
+            supports_reasoning_effort=True,
+            supports_assistant_content_array=False,
+            thinking_format="deepseek",
         )
 
     if is_local_base_url(base_url) and "gemma" in normalized_model:
@@ -288,6 +293,10 @@ class OpenAICompletionsProvider(BaseProvider):
                         create_kwargs["reasoning_effort"] = mapped_effort
         elif compat.thinking_format in {"qwen", "llama_gemma"}:
             extra_body["enable_thinking"] = bool(thinking_level and thinking_level != "none")
+        elif compat.thinking_format == "deepseek":
+            if thinking_level and thinking_level != "none":
+                create_kwargs["reasoning_effort"] = thinking_level
+            extra_body["thinking"] = {"type": "enabled"}
         elif (
             self.supports_reasoning_effort
             and compat.supports_reasoning_effort
@@ -483,23 +492,32 @@ class OpenAICompletionsProvider(BaseProvider):
 
         # Copilot requires assistant content as a string, not an array.
         # Sending as array causes Claude models to re-answer all previous prompts.
-        if self.force_string_assistant_content:
+        if (
+            self.force_string_assistant_content
+            or not self._compat.supports_assistant_content_array
+        ):
             content: Any = "".join(content_parts) if content_parts else None
         else:
             content = (
                 [{"type": "text", "text": t} for t in content_parts] if content_parts else None
             )
 
+        if not self._compat.supports_assistant_content_array and content is None:
+            content = ""
+
         result: dict[str, Any] = {"role": "assistant", "content": content}
 
         for field, thinking_list in thinking_by_field.items():
             result[field] = "\n".join(thinking_list)
 
+        if not self._compat.supports_assistant_content_array and "reasoning_content" not in result:
+            result["reasoning_content"] = ""
+
         if tool_calls:
             result["tool_calls"] = tool_calls
 
-        # Skip assistant messages with no content and no tool calls
-        if not content and not tool_calls:
+        # Skip assistant messages with no replayable content.
+        if not content and not tool_calls and not thinking_by_field:
             return cast(ChatCompletionMessageParam, {"role": "assistant", "content": ""})
 
         return cast(ChatCompletionMessageParam, result)

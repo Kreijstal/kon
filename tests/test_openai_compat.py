@@ -2,6 +2,7 @@ from typing import Any, cast
 
 import pytest
 
+from kon.core.types import AssistantMessage, TextContent, ThinkingContent, ToolCall
 from kon.llm.base import ProviderConfig, is_local_base_url, resolve_api_key
 from kon.llm.providers.openai_codex_responses import OpenAICodexResponsesProvider
 from kon.llm.providers.openai_compat import supports_developer_role
@@ -87,6 +88,83 @@ def test_openai_completions_uses_developer_without_think_prefix_for_openai_api()
 
     assert messages[0]["role"] == "developer"
     assert messages[0]["content"] == "You are helpful"
+
+
+def test_openai_completions_replays_thinking_only_assistant_messages() -> None:
+    provider = OpenAICompletionsProvider(
+        ProviderConfig(
+            api_key="test-key", base_url="https://api.deepseek.com", provider="deepseek"
+        )
+    )
+
+    message = AssistantMessage(
+        content=[ThinkingContent(thinking="private reasoning", signature="reasoning_content")]
+    )
+
+    converted = provider._convert_assistant_message(message)
+
+    assert converted["role"] == "assistant"
+    assert converted["content"] == ""
+    assert converted["reasoning_content"] == "private reasoning"
+
+
+def test_openai_completions_replays_deepseek_assistant_content_as_string() -> None:
+    provider = OpenAICompletionsProvider(
+        ProviderConfig(
+            api_key="test-key", base_url="https://api.deepseek.com", provider="deepseek"
+        )
+    )
+
+    message = AssistantMessage(
+        content=[
+            ThinkingContent(thinking="private reasoning", signature="reasoning_content"),
+            TextContent(text="visible answer"),
+        ]
+    )
+
+    converted = provider._convert_assistant_message(message)
+
+    assert converted["content"] == "visible answer"
+    assert converted["reasoning_content"] == "private reasoning"
+
+
+def test_openai_completions_replays_deepseek_tool_calls_with_empty_reasoning() -> None:
+    provider = OpenAICompletionsProvider(
+        ProviderConfig(
+            api_key="test-key", base_url="https://api.deepseek.com", provider="deepseek"
+        )
+    )
+
+    message = AssistantMessage(
+        content=[ToolCall(id="call-1", name="bash", arguments={"command": "true"})]
+    )
+
+    converted = provider._convert_assistant_message(message)
+
+    assert converted["content"] == ""
+    assert converted["reasoning_content"] == ""
+    assert converted["tool_calls"] == [
+        {
+            "id": "call-1",
+            "type": "function",
+            "function": {"name": "bash", "arguments": '{"command": "true"}'},
+        }
+    ]
+
+
+def test_openai_completions_replays_deepseek_text_with_empty_reasoning() -> None:
+    provider = OpenAICompletionsProvider(
+        ProviderConfig(
+            api_key="test-key", base_url="https://api.deepseek.com", provider="deepseek"
+        )
+    )
+
+    message = AssistantMessage(content=[TextContent(text="visible answer")])
+
+    converted = provider._convert_assistant_message(message)
+
+    assert converted["content"] == "visible answer"
+    assert converted["reasoning_content"] == ""
 
 
 class _EmptyAsyncIterator:
