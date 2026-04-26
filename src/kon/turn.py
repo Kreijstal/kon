@@ -281,6 +281,7 @@ class _TurnRunner:
         system_prompt: str | None,
         turn: int,
         cancel_event: asyncio.Event | None,
+        steer_event: asyncio.Event | None,
         retry_delays: list[int] | None,
     ):
         self._provider = provider
@@ -289,6 +290,7 @@ class _TurnRunner:
         self._system_prompt = system_prompt
         self._turn = turn
         self._cancel_event = cancel_event
+        self._steer_event = steer_event
         self._retry_delays = retry_delays if retry_delays is not None else [2, 4, 8]
 
         self._stream: LLMStream | None = None
@@ -660,6 +662,19 @@ class _TurnRunner:
                 display=pending.display,
             )
 
+        if self._is_steered():
+            self._stop_reason = StopReason.STEER
+            for pending in finalized_tools:
+                result = _create_skipped_tool_result(pending.tool_call, reason="Steered by user")
+                self._tool_results.append(result)
+                yield ToolResultEvent(
+                    tool_call_id=pending.tool_call.id,
+                    tool_name=pending.tool_call.name,
+                    result=result,
+                    file_changes=None,
+                )
+            return
+
         for pending in finalized_tools:
             async for event in self._run_one_tool(pending):
                 yield event
@@ -718,6 +733,9 @@ class _TurnRunner:
     def _is_cancelled(self) -> bool:
         return self._cancel_event is not None and self._cancel_event.is_set()
 
+    def _is_steered(self) -> bool:
+        return self._steer_event is not None and self._steer_event.is_set()
+
     def _mark_interrupted(self) -> None:
         self._interrupted = True
         self._stop_reason = StopReason.INTERRUPTED
@@ -745,6 +763,7 @@ async def run_single_turn(
     system_prompt: str | None = None,
     turn: int = 0,
     cancel_event: asyncio.Event | None = None,
+    steer_event: asyncio.Event | None = None,
     retry_delays: list[int] | None = None,
 ) -> AsyncIterator[StreamEvent]:
     runner = _TurnRunner(
@@ -754,6 +773,7 @@ async def run_single_turn(
         system_prompt=system_prompt,
         turn=turn,
         cancel_event=cancel_event,
+        steer_event=steer_event,
         retry_delays=retry_delays,
     )
     async for event in runner.run():

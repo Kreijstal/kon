@@ -203,6 +203,7 @@ class Agent:
                     system_prompt=system_prompt,
                     turn=turn,
                     cancel_event=cancel_event,
+                    steer_event=steer_event,
                 ):
                     yield event
 
@@ -219,6 +220,9 @@ class Agent:
 
                 if was_interrupted or stop_reason == StopReason.INTERRUPTED:
                     stop_reason = StopReason.INTERRUPTED
+                    break
+
+                if stop_reason == StopReason.STEER:
                     break
 
                 if steer_event and steer_event.is_set():
