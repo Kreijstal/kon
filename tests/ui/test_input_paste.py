@@ -43,12 +43,24 @@ class _TestableInputBox(InputBox):
         super().__init__(cwd="/tmp")
         self._fake_textarea = _FakeTextArea(text)
         self.posted_messages: list[InputBox.Submitted] = []
+        self._fake_app = _FakeApp()
 
     def query_one(self, *args, **kwargs):  # type: ignore[override]
         return self._fake_textarea
 
     def post_message(self, message: InputBox.Submitted):  # type: ignore[override]
         self.posted_messages.append(message)
+
+    @property
+    def app(self):
+        return self._fake_app
+
+
+class _FakeApp:
+    def deny_pending_approval(self) -> bool:
+        return False
+
+    _is_running = False
 
 
 class _KeyBinding(Protocol):
@@ -166,3 +178,32 @@ def test_legacy_esc_lf_maps_to_alt_enter() -> None:
 
 def test_ctrl_enter_uses_csi_u_mapping() -> None:
     assert _sequence_value("\x1b[13;5u") == "ctrl+enter"
+
+
+def test_esc_clears_input_then_loads_history_on_second_press() -> None:
+    input_box = _TestableInputBox("hello")
+    input_box._add_to_history("hello")
+    input_box._add_to_history("world")
+
+    # First esc: clears input when not empty
+    input_box._fake_textarea.text = "hello"
+    input_box.action_cancel()
+    assert input_box._fake_textarea.text == ""
+    assert input_box._fake_textarea.cleared is True
+
+    # Reset cleared flag
+    input_box._fake_textarea.cleared = False
+
+    # Second esc: input is empty, loads last history entry
+    input_box.action_cancel()
+    assert input_box._fake_textarea.text == "world"
+    assert input_box._history.is_browsing is True
+
+
+def test_esc_loads_previous_message_when_input_cleared() -> None:
+    input_box = _TestableInputBox("")
+    input_box._add_to_history("previous message")
+
+    # esc with empty input loads last history entry
+    input_box.action_cancel()
+    assert input_box._fake_textarea.text == "previous message"

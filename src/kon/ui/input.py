@@ -689,8 +689,10 @@ class InputBox(Vertical):
             return
         if getattr(app, "_is_running", False):
             app.action_interrupt_agent()  # type: ignore
-        else:
+        elif self.query_one("#input-textarea", TextArea).text.strip():
             self.clear()
+        else:
+            self._history_navigate(-1)
 
     def action_cursor_up(self) -> None:
         if self._is_completing:

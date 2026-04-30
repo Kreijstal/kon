@@ -143,9 +143,9 @@ class AgentRunnerMixin:
             self._cancel_event = None
             self._steer_event = None
             self._clear_approval_state()
-            status.set_status("idle")
 
             if was_interrupted:
+                status.set_status("idle")
                 self._pending_queue.clear()
                 self._steer_queue.clear()
                 self._update_queue_display()
@@ -153,8 +153,11 @@ class AgentRunnerMixin:
 
             queued = self._dequeue_next_prompt()
             if queued is None:
+                status.set_status("idle")
                 break
-            next_display, next_query, next_images = queued
+            is_steer, next_display, next_query, next_images = queued
+            if not is_steer:
+                status.set_status("idle")
             chat.add_user_message(next_display)
             current_prompt = next_query
             current_images = next_images
@@ -168,16 +171,21 @@ class AgentRunnerMixin:
 
         self._show_pending_update_notice_if_idle()
 
-    def _dequeue_next_prompt(self) -> tuple[str, str, list[ImageContent]] | None:
-        # Steer messages take priority — drain steer queue first
+    def _dequeue_next_prompt(
+        self,
+    ) -> tuple[bool, str, str, list[ImageContent]] | None:
+        # Steer messages take priority; keep the active timer running for them.
         if self._steer_queue:
+            is_steer = True
             queued = self._steer_queue.popleft()
         elif self._pending_queue:
+            is_steer = False
             queued = self._pending_queue.popleft()
         else:
             return None
         self._update_queue_display()
-        return _unpack_queue_item(queued)
+        display, query, images = _unpack_queue_item(queued)
+        return is_steer, display, query, images
 
     async def _render_agent_event(
         self, event: object, chat: ChatLog, status: StatusLine, info_bar: InfoBar

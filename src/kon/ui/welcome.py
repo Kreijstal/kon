@@ -8,8 +8,12 @@ _LOGO = ("░█░█░█▀█░█▀█", "░█▀▄░█░█░█
 
 _SHORTCUT_ROWS = (
     (("/", "slash commands"), ("@", "files/dirs"), ("tab", "complete paths"), ("↑/↓", "history")),
-    (("shift+tab", "permissions"), ("esc", "to interrupt"), ("shift+enter", "add newline")),
-    (("ctrl+c", "clear input"), ("ctrl+c x2", "exit"), ("enter", "steer"), ("alt+enter", "queue")),
+    (
+        ("shift+tab", "permissions"),
+        ("esc", "interrupt / clear / edit last"),
+        ("shift+enter", "add newline"),
+    ),
+    (("ctrl+c x2", "exit"), ("enter", "steer"), ("alt+enter", "queue")),
     (("↑/↓", "select queue"), ("ctrl+t", "cycle thinking"), ("ctrl+shift+t", "toggle thinking")),
 )
 

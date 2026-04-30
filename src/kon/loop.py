@@ -187,8 +187,8 @@ class Agent:
                     yield InterruptedEvent(message="Interrupted by user")
                     break
 
+                # Steer: break the loop to let the app inject queued messages
                 if steer_event and steer_event.is_set():
-                    stop_reason = StopReason.STEER
                     break
 
                 turn += 1
@@ -222,11 +222,8 @@ class Agent:
                     stop_reason = StopReason.INTERRUPTED
                     break
 
-                if stop_reason == StopReason.STEER:
-                    break
-
+                # Steer: break the loop to let the app inject queued messages
                 if steer_event and steer_event.is_set():
-                    stop_reason = StopReason.STEER
                     break
 
                 cooldown = kon_config.agent.turn_cooldown_seconds

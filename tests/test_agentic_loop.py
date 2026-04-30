@@ -180,9 +180,7 @@ async def test_agent_max_turns_limit(tools, in_memory_session, max_turns_one):
 
 
 @pytest.mark.asyncio
-async def test_agent_steer_stop_reason_is_not_overwritten_by_length(
-    tools, in_memory_session, max_turns_one
-):
+async def test_agent_steer_breaks_loop_before_turn(tools, in_memory_session, max_turns_one):
     provider = MockProvider(scenario="default")
     agent = Agent(provider, tools, in_memory_session)
     steer_event = asyncio.Event()
@@ -202,7 +200,7 @@ async def test_agent_steer_stop_reason_is_not_overwritten_by_length(
     agent_end = events[-1]
     assert isinstance(agent_end, AgentEndEvent)
     assert agent_end.total_turns == 1
-    assert agent_end.stop_reason == StopReason.STEER
+    assert agent_end.stop_reason == StopReason.LENGTH
 
 
 @pytest.mark.asyncio

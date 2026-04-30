@@ -296,9 +296,9 @@ class BashTool(BaseTool):
                             with contextlib.suppress(asyncio.CancelledError):
                                 await task
                         await _kill_process_tree(proc)
+                        msg = f"Command timed out after {params.timeout}s"
                         return ToolResult(
-                            success=False,
-                            ui_summary=f"[red]Command timed out after {params.timeout}s[/red]",
+                            success=False, result=msg, ui_summary=f"[red]{msg}[/red]"
                         )
 
                     if cancel_wait in done and cancel_event.is_set():
@@ -340,10 +340,8 @@ class BashTool(BaseTool):
                         comm_task.cancel()
                         with contextlib.suppress(asyncio.CancelledError):
                             await comm_task
-                return ToolResult(
-                    success=False,
-                    ui_summary=f"[red]Command timed out after {params.timeout}s[/red]",
-                )
+                msg = f"Command timed out after {params.timeout}s"
+                return ToolResult(success=False, result=msg, ui_summary=f"[red]{msg}[/red]")
 
             stdout = _sanitize_output(stdout_bytes.decode("utf-8", errors="replace"))
             stderr = _sanitize_output(stderr_bytes.decode("utf-8", errors="replace"))

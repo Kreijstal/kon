@@ -663,7 +663,6 @@ class _TurnRunner:
             )
 
         if self._is_steered():
-            self._stop_reason = StopReason.STEER
             for pending in finalized_tools:
                 result = _create_skipped_tool_result(pending.tool_call, reason="Steered by user")
                 self._tool_results.append(result)
