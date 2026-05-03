@@ -446,7 +446,8 @@ class Session:
 
     @property
     def messages(self) -> list[Message]:
-        """Messages for LLM context. If compaction exists, returns compacted view."""
+        """Messages for LLM context, following the parent chain from leaf_id.
+        If compaction exists, returns compacted view."""
         last_compaction: CompactionEntry | None = None
         for entry in reversed(self.active_entries):
             if isinstance(entry, CompactionEntry):
@@ -477,6 +478,31 @@ class Session:
                 result.append(entry.message)
 
         return result
+
+    def _chain_entries(self) -> list[SessionEntry]:
+        """Entries reachable from _leaf_id by following parent_id."""
+        if not self._by_id or self._leaf_id is None:
+            return []
+        chain: list[SessionEntry] = []
+        node_id: str | None = self._leaf_id
+        while node_id is not None:
+            entry = self._by_id.get(node_id)
+            if entry is None:
+                break
+            chain.append(entry)
+            node_id = entry.parent_id
+        chain.reverse()
+        return chain
+
+    @property
+    def chain_entries(self) -> list[SessionEntry]:
+        return self._chain_entries()
+
+    def rollback_to(self, entry_id: str) -> None:
+        """Set _leaf_id to a specific entry, truncating the conversation."""
+        if entry_id not in self._by_id:
+            raise ValueError(f"Entry not found: {entry_id}")
+        self._leaf_id = entry_id
 
     @property
     def all_messages(self) -> list[Message]:

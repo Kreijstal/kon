@@ -86,6 +86,31 @@ def test_round_trip_basic_messages(tmp_path, user_message, assistant_message, mo
     assert loaded_session.messages[1].stop_reason == StopReason.STOP
 
 
+def test_rollback_uses_selected_entry_as_active_conversation(tmp_path, monkeypatch):
+    monkeypatch.setattr("kon.session.Session.get_sessions_dir", lambda cwd: tmp_path)
+
+    session = Session.create("/test/project", provider="openai", model_id="gpt-4")
+    first_id = session.append_message(UserMessage(content="First"))
+    session.append_message(
+        AssistantMessage(
+            content=[TextContent(text="First response")],
+            usage=Usage(input_tokens=10, output_tokens=5),
+        )
+    )
+    session.append_thinking_level_change("xhigh")
+    session.append_model_change("openai", "gpt-5")
+    session.append_message(UserMessage(content="Second"))
+
+    session.rollback_to(first_id)
+
+    assert [message.content for message in session.messages] == ["First"]
+    assert [entry.id for entry in session.chain_entries] == [first_id]
+    assert session.token_totals().total_tokens == 0
+    assert session.message_counts().user_messages == 1
+    assert session.model == ("openai", "gpt-4", None)
+    assert session.thinking_level == "high"
+
+
 def test_round_trip_with_thinking(tmp_path, thinking_message, monkeypatch):
     monkeypatch.setattr("kon.session.Session.get_sessions_dir", lambda cwd: tmp_path)
 

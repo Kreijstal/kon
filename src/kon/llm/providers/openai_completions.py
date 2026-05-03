@@ -428,7 +428,9 @@ class OpenAICompletionsProvider(BaseProvider):
                 if pending_images:
                     result.append(self._create_image_user_message(pending_images))
                     pending_images = []
-                result.append(self._convert_assistant_message(msg))
+                converted = self._convert_assistant_message(msg)
+                if converted is not None:
+                    result.append(converted)
             elif isinstance(msg, ToolResultMessage):
                 result.append(self._convert_tool_result(msg))
                 if supports_vision:
@@ -478,7 +480,9 @@ class OpenAICompletionsProvider(BaseProvider):
 
         return cast(ChatCompletionMessageParam, {"role": "user", "content": parts})
 
-    def _convert_assistant_message(self, msg: AssistantMessage) -> ChatCompletionMessageParam:
+    def _convert_assistant_message(
+        self, msg: AssistantMessage
+    ) -> ChatCompletionMessageParam | None:
         content_parts: list[str] = []
         tool_calls: list[dict[str, Any]] = []
         thinking_by_field: dict[str, list[str]] = {}
@@ -530,7 +534,7 @@ class OpenAICompletionsProvider(BaseProvider):
 
         # Skip assistant messages with no replayable content.
         if not content and not tool_calls and not thinking_by_field:
-            return cast(ChatCompletionMessageParam, {"role": "assistant", "content": ""})
+            return None
 
         return cast(ChatCompletionMessageParam, result)
 

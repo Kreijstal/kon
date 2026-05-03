@@ -75,6 +75,10 @@ class PromptHistory:
         self._reset_index()
 
     @property
+    def entries(self) -> list[str]:
+        return list(self._entries)
+
+    @property
     def is_browsing(self) -> bool:
         return self._index != 0
 

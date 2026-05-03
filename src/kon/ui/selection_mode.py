@@ -15,3 +15,4 @@ class SelectionMode(StrEnum):
     SETTINGS = "settings"
     TREE = "tree"
     URL = "url"
+    CHAT_HISTORY = "chat_history"

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import re
+import time
 from collections.abc import Callable
 from pathlib import Path
 from types import SimpleNamespace
@@ -57,6 +58,7 @@ _SKILL_TRIGGER_MARKER = "\u2063"
 _SHELL_COMMAND_CLASS = "-shell-command"
 _SHELL_COMMAND_LLM_CLASS = "-shell-command-llm"
 _TEXTAREA_THEME = "kon-input"
+_CHAT_HISTORY_ESCAPE_THRESHOLD = 1.0
 
 
 def _stylize_slash_commands(line: Text, names: frozenset[str] | set[str]) -> None:
@@ -287,6 +289,7 @@ class InputBox(Vertical):
         self._selected_skill_commands: list[str] = []
         self._shell_mode = 0
         self._prefix: Label | None = None
+        self._last_empty_escape_time: float = 0.0
 
     def compose(self) -> ComposeResult:
         with Horizontal(id="input-row"):
@@ -680,19 +683,28 @@ class InputBox(Vertical):
             self._active_provider = None
             self._completion_prefix = ""
             self.post_message(self.CompletionHide())
+            self._last_empty_escape_time = 0.0
             return
 
         app = self.app
         if getattr(app, "cancel_queue_edit", lambda: False)():
             return
         if getattr(app, "deny_pending_approval", lambda: False)():
+            self._last_empty_escape_time = 0.0
             return
         if getattr(app, "_is_running", False):
+            self._last_empty_escape_time = 0.0
             app.action_interrupt_agent()  # type: ignore
         elif self.query_one("#input-textarea", TextArea).text.strip():
             self.clear()
+            self._last_empty_escape_time = time.time()
         else:
-            self._history_navigate(-1)
+            now = time.time()
+            if now - self._last_empty_escape_time <= _CHAT_HISTORY_ESCAPE_THRESHOLD:
+                self.post_message(self.ChatHistoryRequest())
+                self._last_empty_escape_time = 0.0
+                return
+            self._last_empty_escape_time = now
 
     def action_cursor_up(self) -> None:
         if self._is_completing:
@@ -979,3 +991,6 @@ class InputBox(Vertical):
         def __init__(self, query: str) -> None:
             super().__init__()
             self.query = query
+
+    class ChatHistoryRequest(Message):
+        """Request showing the current conversation history picker."""

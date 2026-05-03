@@ -214,10 +214,15 @@ class ChatLog(VerticalScroll):
                 ),
                 (
                     ("shift+tab", "permissions"),
-                    ("esc", "interrupt / clear / edit last"),
-                    ("shift+enter", "add newline"),
+                    ("esc", "interrupt / clear"),
+                    ("esc esc", "chat history"),
                 ),
-                (("ctrl+c x2", "exit"), ("enter", "steer"), ("alt+enter", "queue")),
+                (
+                    ("shift+enter", "add newline"),
+                    ("ctrl+c x2", "exit"),
+                    ("enter", "steer"),
+                    ("alt+enter", "queue"),
+                ),
                 (
                     ("↑/↓", "select queue"),
                     ("ctrl+t", "cycle thinking"),

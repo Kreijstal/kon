@@ -632,16 +632,19 @@ def set_show_welcome_shortcuts(enabled: bool) -> Config:
     return reload_config()
 
 
-def set_permissions_mode(mode: PermissionMode) -> Config:
+def set_permission_mode(mode: PermissionMode) -> Config:
+    if mode not in PERMISSION_MODES:
+        raise ValueError(f"Invalid permission mode '{mode}'. Valid modes: {PERMISSION_MODES}")
+
     config_file = _ensure_config_file()
     data = _read_config_data(config_file)
 
-    perms = data.get("permissions")
-    if not isinstance(perms, dict):
-        perms = {}
-        data["permissions"] = perms
+    permissions = data.get("permissions")
+    if not isinstance(permissions, dict):
+        permissions = {}
+        data["permissions"] = permissions
 
-    perms["mode"] = mode
+    permissions["mode"] = mode
     _set_config_version(data)
 
     _atomic_write_text(config_file, _serialize_config_toml(data))
@@ -706,6 +709,10 @@ def set_colored_tool_badge(enabled: bool) -> Config:
     return reload_config()
 
 
+def set_permissions_mode(mode: PermissionMode) -> Config:
+    return set_permission_mode(mode)
+
+
 def set_notifications_enabled(enabled: bool) -> Config:
     config_file = _ensure_config_file()
     data = _read_config_data(config_file)
@@ -720,6 +727,10 @@ def set_notifications_enabled(enabled: bool) -> Config:
 
     _atomic_write_text(config_file, _serialize_config_toml(data))
     return reload_config()
+
+
+def set_notifications_mode(enabled: bool) -> Config:
+    return set_notifications_enabled(enabled)
 
 
 def reset_config() -> None:

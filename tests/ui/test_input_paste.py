@@ -1,4 +1,4 @@
-from typing import Protocol, cast
+from typing import Any, Protocol, cast
 
 import pytest
 from PIL import Image
@@ -42,13 +42,13 @@ class _TestableInputBox(InputBox):
     def __init__(self, text: str = "") -> None:
         super().__init__(cwd="/tmp")
         self._fake_textarea = _FakeTextArea(text)
-        self.posted_messages: list[InputBox.Submitted] = []
+        self.posted_messages: list[Any] = []
         self._fake_app = _FakeApp()
 
     def query_one(self, *args, **kwargs):  # type: ignore[override]
         return self._fake_textarea
 
-    def post_message(self, message: InputBox.Submitted):  # type: ignore[override]
+    def post_message(self, message):  # type: ignore[override]
         self.posted_messages.append(message)
 
     @property
@@ -180,7 +180,7 @@ def test_ctrl_enter_uses_csi_u_mapping() -> None:
     assert _sequence_value("\x1b[13;5u") == "ctrl+enter"
 
 
-def test_esc_clears_input_then_loads_history_on_second_press() -> None:
+def test_esc_clears_input_then_shows_history_picker_on_second_press() -> None:
     input_box = _TestableInputBox("hello")
     input_box._add_to_history("hello")
     input_box._add_to_history("world")
@@ -194,16 +194,20 @@ def test_esc_clears_input_then_loads_history_on_second_press() -> None:
     # Reset cleared flag
     input_box._fake_textarea.cleared = False
 
-    # Second esc: input is empty, loads last history entry
+    # Second esc: input is empty, requests chat history picker
     input_box.action_cancel()
-    assert input_box._fake_textarea.text == "world"
-    assert input_box._history.is_browsing is True
+    assert len(input_box.posted_messages) == 1
+    assert isinstance(input_box.posted_messages[0], InputBox.ChatHistoryRequest)
 
 
-def test_esc_loads_previous_message_when_input_cleared() -> None:
+def test_esc_esc_with_empty_input_shows_history_picker() -> None:
     input_box = _TestableInputBox("")
     input_box._add_to_history("previous message")
 
-    # esc with empty input loads last history entry
     input_box.action_cancel()
-    assert input_box._fake_textarea.text == "previous message"
+    assert input_box.posted_messages == []
+
+    # second esc with empty input sends chat history request
+    input_box.action_cancel()
+    assert len(input_box.posted_messages) == 1
+    assert isinstance(input_box.posted_messages[0], InputBox.ChatHistoryRequest)
