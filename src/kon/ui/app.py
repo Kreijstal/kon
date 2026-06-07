@@ -32,11 +32,12 @@ from ..context.skills import (
     merge_registered_skills,
     render_skill_prompt,
 )
+from ..core.types import AssistantMessage, TextContent, ToolCall, ToolResultMessage, UserMessage
 from ..llm import BaseProvider
 from ..llm.base import AuthMode
 from ..permissions import ApprovalResponse
 from ..runtime import ConversationRuntime
-from ..session import Session
+from ..session import MessageEntry, Session
 from ..tools import DEFAULT_TOOLS, EXTRA_TOOLS, get_tools
 from .agent_runner import AgentRunnerMixin
 from .autocomplete import DEFAULT_COMMANDS, SlashCommand
@@ -619,6 +620,54 @@ class Kon(
     # -------------------------------------------------------------------------
     # Input submission
     # -------------------------------------------------------------------------
+
+    @on(InputBox.ChatHistoryRequest)
+    def on_chat_history_request(self) -> None:
+        input_box = self.query_one("#input-box", InputBox)
+        session = self._runtime.session
+        if session is None:
+            return
+
+        items: list[ListItem] = []
+        for entry in session.chain_entries:
+            if not isinstance(entry, MessageEntry):
+                continue
+            label = self._format_history_entry_label(entry)
+            if label:
+                items.append(ListItem(value=entry.id, label=label, description=entry.message.role))
+
+        if not items:
+            return
+
+        completion_list = self.query_one("#completion-list", FloatingList)
+        completion_list.show(items, searchable=True, max_label_width=80)
+
+        input_box.set_autocomplete_enabled(False)
+        input_box.set_completing(True)
+        input_box.focus()
+        self._selection_mode = SelectionMode.CHAT_HISTORY
+
+    def _format_history_entry_label(self, entry: MessageEntry) -> str:
+        message = entry.message
+        if isinstance(message, UserMessage):
+            text = self._extract_text_content(message.content)
+        elif isinstance(message, AssistantMessage):
+            text = "".join(
+                part.text for part in message.content if isinstance(part, TextContent)
+            ).strip()
+            if not text:
+                tool_names = [part.name for part in message.content if isinstance(part, ToolCall)]
+                text = f"tool call: {', '.join(tool_names)}" if tool_names else "(assistant)"
+        elif isinstance(message, ToolResultMessage):
+            if message.ui_summary:
+                text = message.ui_summary
+            else:
+                text, _ = self._format_tool_result_text(message)
+            text = text.strip() if text else f"{message.tool_name} result"
+        else:
+            text = ""
+
+        return " ".join(text.split())[:72]
 
     @on(InputBox.Submitted)
     def on_input_submitted(self, event: InputBox.Submitted) -> None:

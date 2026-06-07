@@ -83,6 +83,31 @@ class SessionUIMixin:
 
         return "", None
 
+    def _sync_session_status(self, session: Session) -> None:
+        info_bar = self.query_one("#info-bar", InfoBar)
+        token_totals = session.token_totals()
+        info_bar.set_tokens(
+            token_totals.input_tokens,
+            token_totals.output_tokens,
+            token_totals.context_tokens,
+            token_totals.cache_read_tokens,
+            token_totals.cache_write_tokens,
+        )
+        info_bar.set_file_changes(session.file_changes_summary())
+
+    async def _rerender_session(self, session: Session) -> None:
+        chat = self.query_one("#chat-log", ChatLog)
+        await chat.remove_all_children()
+        chat.add_session_info(getattr(self, "VERSION", ""))
+        if self._runtime.context:
+            chat.add_loaded_resources(
+                context_paths=[format_path(f.path) for f in self._runtime.context.agents_files],
+                skills=self._runtime.context.skills,
+                tools=self._runtime.tools,
+            )
+        self._render_session_entries(session)
+        self._sync_session_status(session)
+
     def _render_session_entries(self, session: Session) -> None:
         chat = self.query_one("#chat-log", ChatLog)
         started_tools: set[str] = set()

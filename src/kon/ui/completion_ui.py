@@ -47,6 +47,7 @@ class CompletionUIMixin:
         def _select_login_provider(self, provider_id: str) -> None: ...
         def _select_logout_provider(self, provider_id: str) -> None: ...
         def _render_session_entries(self, session) -> None: ...
+        async def _rerender_session(self, session) -> None: ...
         async def _load_session(self, session_path) -> None: ...
 
     def _is_chat_at_bottom(self) -> bool:
@@ -230,6 +231,10 @@ class CompletionUIMixin:
                 self._select_login_provider(item.value)
             case SelectionMode.LOGOUT:
                 self._select_logout_provider(item.value)
+            case SelectionMode.CHAT_HISTORY:
+                if self._runtime.session:
+                    self._runtime.session.rollback_to(item.value)
+                    self.run_worker(self._rerender_session(self._runtime.session), exclusive=True)
 
         self._restore_chat_scroll_after_refresh(was_at_bottom)
 
