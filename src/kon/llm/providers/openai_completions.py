@@ -202,16 +202,19 @@ class OpenAICompletionsProvider(BaseProvider):
             self._compat = _detect_compat(provider, base_url)
             return
 
+        env_vars = self._env_vars_for_provider(config)
         api_key = resolve_api_key(
             config.api_key or provider_config_api_key,
-            env_vars=self._env_vars_for_provider(config),
+            env_vars=env_vars,
             base_url=config.base_url,
             auth_mode=config.openai_compat_auth_mode,
         )
         if not api_key:
+            provider_name = self._provider_name_for_error(config)
+            env_help = " or ".join(env_vars)
             raise ValueError(
-                f"No API key found for {self.name}. "
-                "Set OPENAI_API_KEY, DEEPSEEK_API_KEY, or ZAI_API_KEY environment variable, "
+                f"No API key found for {provider_name}. "
+                f"Set {env_help} environment variable, "
                 'or configure llm.auth.openai_compat = "auto"/"none" for local endpoints.'
             )
         self._client = AsyncOpenAI(
@@ -237,6 +240,21 @@ class OpenAICompletionsProvider(BaseProvider):
             return ("ZAI_API_KEY", "OPENAI_API_KEY")
 
         return ("OPENAI_API_KEY",)
+
+    @staticmethod
+    def _provider_name_for_error(config: ProviderConfig) -> str:
+        provider = (config.provider or "").lower()
+        base_url = (config.base_url or "").lower()
+
+        if provider:
+            return provider
+        if "api.deepseek.com" in base_url:
+            return "deepseek"
+        if "api.z.ai" in base_url:
+            return "zai"
+        if "api.x.ai" in base_url:
+            return "xai"
+        return OpenAICompletionsProvider.name
 
     async def _stream_impl(
         self,
