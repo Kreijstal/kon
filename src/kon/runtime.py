@@ -8,6 +8,7 @@ from . import config as kon_config
 from .context import Context
 from .core.compaction import generate_summary, summary_max_tokens
 from .core.handoff import generate_handoff_prompt
+from .core.subagent import SubagentContext, set_subagent_context_provider
 from .core.types import AssistantMessage, TextContent, UserMessage
 from .llm import (
     ApiType,
@@ -414,6 +415,18 @@ class ConversationRuntime:
         self._sync_provider_session_id()
         return TreeNavigationResult(editor_text=editor_text)
 
+    def _subagent_context(self) -> SubagentContext | None:
+        if self.provider is None:
+            return None
+        model_info = get_model(self.model, self.model_provider)
+        return SubagentContext(
+            provider=self.provider,
+            cwd=self.cwd,
+            tools=self.tools,
+            context_window=model_info.context_window if model_info else None,
+            max_output_tokens=model_info.max_tokens if model_info else None,
+        )
+
     def prepare_for_run(self) -> Agent | None:
         if self.provider is None or self.session is None:
             return None
@@ -426,6 +439,8 @@ class ConversationRuntime:
         self.agent.tools = self.tools
         self.agent.config.context_window = model_info.context_window if model_info else None
         self.agent.config.max_output_tokens = model_info.max_tokens if model_info else None
+        # Let the `task` tool reach the live provider/tools for spawning subagents.
+        set_subagent_context_provider(self._subagent_context)
         return self.agent
 
     def reload_context(self) -> None:

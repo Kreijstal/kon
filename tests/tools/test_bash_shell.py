@@ -5,7 +5,9 @@ flag, so the Git-bash-path-with-spaces regression is covered without a
 Windows machine.
 """
 
+import asyncio
 import os
+from pathlib import Path
 
 import pytest
 
@@ -141,3 +143,33 @@ async def test_execute_handles_quotes_and_spaces():
     result = await BashTool().execute(BashParams(command="printf '%s' \"a b  c\""))
     assert result.success
     assert result.result == "a b  c"
+
+
+@pytest.mark.asyncio
+async def test_execute_can_start_background_command(tmp_path):
+    marker = tmp_path / "background-done.txt"
+
+    result = await BashTool().execute(
+        BashParams(
+            command=(
+                f"sleep 0.1; printf 'background-output' > {str(marker)!r}; printf 'log-output'"
+            ),
+            background=True,
+        )
+    )
+
+    assert result.success
+    assert result.result is not None
+    assert "Started background command." in result.result
+    assert "PID:" in result.result
+    log_line = next(line for line in result.result.splitlines() if line.startswith("Output log: "))
+    log_path = Path(log_line.removeprefix("Output log: "))
+
+    for _ in range(30):
+        if marker.exists():
+            break
+        await asyncio.sleep(0.05)
+
+    assert marker.read_text(encoding="utf-8") == "background-output"
+    assert log_path.exists()
+    assert "log-output" in log_path.read_text(encoding="utf-8")

@@ -1,10 +1,14 @@
 from ..core.types import ToolDefinition
 from .base import BaseTool
 from .bash import BashTool
+from .bash_output import BashOutputTool
 from .edit import EditTool
 from .find import FindTool
 from .grep import GrepTool
+from .kill_bash import KillBashTool
+from .monitor import MonitorTool
 from .read import ReadTool
+from .task import TaskTool
 from .web_fetch import WebFetchTool
 from .web_search import WebSearchTool
 from .write import WriteTool
@@ -13,11 +17,15 @@ __all__ = [
     "DEFAULT_TOOLS",
     "EXTRA_TOOLS",
     "BaseTool",
+    "BashOutputTool",
     "BashTool",
     "EditTool",
     "FindTool",
     "GrepTool",
+    "KillBashTool",
+    "MonitorTool",
     "ReadTool",
+    "TaskTool",
     "WebFetchTool",
     "WebSearchTool",
     "WriteTool",
@@ -34,12 +42,27 @@ all_tools = [
     BashTool(),
     GrepTool(),
     FindTool(),
+    TaskTool(),
+    BashOutputTool(),
+    KillBashTool(),
+    MonitorTool(),
     WebSearchTool(),
     WebFetchTool(),
 ]
 
 tools_by_name: dict[str, BaseTool] = {tool.name: tool for tool in all_tools}
-DEFAULT_TOOLS: list[str] = ["read", "edit", "write", "bash", "grep", "find"]
+DEFAULT_TOOLS: list[str] = [
+    "read",
+    "edit",
+    "write",
+    "bash",
+    "grep",
+    "find",
+    "task",
+    "bash_output",
+    "kill_bash",
+    "monitor",
+]
 EXTRA_TOOLS: list[str] = ["web_search", "web_fetch"]
 
 

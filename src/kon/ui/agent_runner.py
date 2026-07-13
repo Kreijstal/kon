@@ -33,6 +33,7 @@ from ..events import (
     TurnStartEvent,
     WarningEvent,
 )
+from ..heartbeat import HeartbeatStatus
 from ..notify import NotificationEvent, notify
 from ..permissions import ApprovalResponse
 from ..runtime import ConversationRuntime
@@ -60,6 +61,7 @@ class AgentRunnerMixin:
     _shell_tool_counter: int
     _pending_queue: deque[QueuedPrompt]
     _steer_queue: deque[QueuedPrompt]
+    _pending_bg_notifications: list[str]
     _runtime: ConversationRuntime
 
     if TYPE_CHECKING:
@@ -74,6 +76,8 @@ class AgentRunnerMixin:
             self, message: ToolResultMessage
         ) -> tuple[str, str | None]: ...
         async def _load_session_by_id(self, session_id: str) -> None: ...
+        def _set_heartbeat_status(self, status: HeartbeatStatus) -> None: ...
+        def _sync_heartbeat_identity(self) -> None: ...
 
     def _should_notify_for_event(self, event: object) -> bool:
         return self._notification_event_type(event) is not None
@@ -106,6 +110,13 @@ class AgentRunnerMixin:
         current_prompt = prompt
         current_images = images
 
+        # Background tasks that finished while idle: prepend their completion notes
+        # so the model reacts to them on this run.
+        if self._pending_bg_notifications:
+            notes = "\n\n".join(self._pending_bg_notifications)
+            self._pending_bg_notifications = []
+            current_prompt = f"{notes}\n\n{current_prompt}" if current_prompt else notes
+
         while True:
             was_interrupted = False
 
@@ -117,6 +128,7 @@ class AgentRunnerMixin:
                 self._cancel_event.set()
 
             status.set_status("working")
+            self._set_heartbeat_status("working")
 
             try:
                 async for event in agent.run(
@@ -146,6 +158,7 @@ class AgentRunnerMixin:
 
             if was_interrupted:
                 status.set_status("idle")
+                self._set_heartbeat_status("idle")
                 self._pending_queue.clear()
                 self._steer_queue.clear()
                 self._update_queue_display()
@@ -154,10 +167,12 @@ class AgentRunnerMixin:
             queued = self._dequeue_next_prompt()
             if queued is None:
                 status.set_status("idle")
+                self._set_heartbeat_status("idle")
                 break
             is_steer, next_display, next_query, next_images = queued
             if not is_steer:
                 status.set_status("idle")
+                self._set_heartbeat_status("idle")
             chat.add_user_message(next_display)
             current_prompt = next_query
             current_images = next_images
@@ -170,10 +185,9 @@ class AgentRunnerMixin:
             self.run_worker(self._load_session_by_id(session_id), exclusive=True)
 
         self._show_pending_update_notice_if_idle()
+        self._sync_heartbeat_identity()
 
-    def _dequeue_next_prompt(
-        self,
-    ) -> tuple[bool, str, str, list[ImageContent]] | None:
+    def _dequeue_next_prompt(self) -> tuple[bool, str, str, list[ImageContent]] | None:
         # Steer messages take priority; keep the active timer running for them.
         if self._steer_queue:
             is_steer = True
@@ -363,6 +377,7 @@ class AgentRunnerMixin:
 
             # Execute the command
             status.set_status("running")
+            self._set_heartbeat_status("running")
             # Manual shell output should render like regular bash tool output:
             # collapsed preview with ctrl+o expansion when details are available.
             result = await bash_tool.execute(
@@ -429,3 +444,4 @@ class AgentRunnerMixin:
             self._interrupt_requested = False
             self._cancel_event = None
             status.set_status("idle")
+            self._set_heartbeat_status("idle")

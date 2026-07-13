@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field
 from kon import config
 from kon.ui.tool_output import truncate_tool_output_text
 
+from ..background import get_background_manager
 from ..core.types import ToolResult
 from .base import BaseTool
 
@@ -173,7 +174,19 @@ def _write_full_output_to_temp(output: str) -> str:
 class BashParams(BaseModel):
     command: str = Field(description="The bash command to execute")
     timeout: int = Field(
-        description=f"Timeout in seconds (default {DEFAULT_TIMEOUT})", default=DEFAULT_TIMEOUT
+        description=(
+            f"Timeout in seconds for foreground execution (default {DEFAULT_TIMEOUT}); "
+            "ignored when background is true"
+        ),
+        default=DEFAULT_TIMEOUT,
+    )
+    background: bool = Field(
+        description=(
+            "Start the command detached and return immediately with a background task id. "
+            "Use this for long-running servers, watchers, or jobs to inspect later with the "
+            "bash_output tool and stop with the kill_bash tool. You are notified when it finishes."
+        ),
+        default=False,
     )
 
 
@@ -182,13 +195,18 @@ class BashTool(BaseTool):
     tool_icon = "$"
     params = BashParams
     prompt_guidelines = (
-        "Use bash for terminal operations (git, package managers, builds, tests, running scripts)",
+        "Use bash for terminal operations "
+        "(git, package managers, builds, tests, running scripts). "
+        "Set background=true only for long-running commands that should continue while the agent "
+        "does other work; read their output later with bash_output and stop them with kill_bash.",
     )
     description = (
         "Execute a bash command in the current working directory. "
         f"Output truncated to last {MAX_OUTPUT_LINES} lines or {MAX_OUTPUT_BYTES // 1024}KB. "
         "If truncated, full output is saved to a temp file. "
-        "Optionally provide a timeout in seconds. "
+        "Optionally provide a timeout in seconds for foreground commands. "
+        "Set background=true to start a detached command and return immediately with a PID and "
+        "log path. "
         "IMPORTANT: Do NOT use bash for file search (use grep/find tools instead), "
         "reading files (use read), or editing files (use edit)."
     )
@@ -203,7 +221,54 @@ class BashTool(BaseTool):
     # 6. On completion, apply tail truncation to the rolling buffer
 
     def format_call(self, params: BashParams) -> str:
+        if params.background:
+            return f"{params.command} &"
         return params.command
+
+    async def _start_background(self, command: str) -> ToolResult:
+        fd, log_path = tempfile.mkstemp(prefix="kon-bg-", suffix=".log")
+        log_file = os.fdopen(fd, "wb")
+        proc = None
+        try:
+            spawn_argv = _get_spawn_argv(command)
+            if spawn_argv is None:
+                proc = await asyncio.create_subprocess_shell(
+                    command,
+                    stdout=log_file,
+                    stderr=asyncio.subprocess.STDOUT,
+                    stdin=asyncio.subprocess.DEVNULL,
+                    env=_get_env(),
+                    start_new_session=not _IS_WINDOWS,
+                )
+            else:
+                proc = await asyncio.create_subprocess_exec(
+                    *spawn_argv,
+                    stdout=log_file,
+                    stderr=asyncio.subprocess.STDOUT,
+                    stdin=asyncio.subprocess.DEVNULL,
+                    env=_get_env(),
+                    start_new_session=not _IS_WINDOWS,
+                )
+        finally:
+            log_file.close()
+
+        task = get_background_manager().register(command, proc, log_path)
+
+        result = (
+            "Started background command.\n"
+            f"Background task id: {task.id}\n"
+            f"PID: {proc.pid}\n"
+            f"Output log: {log_path}\n"
+            f"Read new output with the bash_output tool (bash_id={task.id!r}); "
+            f"stop it with the kill_bash tool (bash_id={task.id!r}). "
+            "You will be notified automatically when it finishes."
+        )
+        return ToolResult(
+            success=True,
+            result=result,
+            ui_summary=f"[dim]background {task.id} · pid {proc.pid}[/dim]",
+            ui_details=f"[dim]log: {log_path}[/dim]",
+        )
 
     def _format_display(
         self, output: str, max_lines: int = 5, max_line_chars: int = 500
@@ -256,6 +321,13 @@ class BashTool(BaseTool):
             return ToolResult(
                 success=False, ui_summary=f"[red]Working directory does not exist: {cwd}[/red]"
             )
+
+        if params.background:
+            try:
+                return await self._start_background(command)
+            except Exception as e:
+                msg = f"Error starting background command: {e}"
+                return ToolResult(success=False, result=msg, ui_summary=f"[red]{msg}[/red]")
 
         proc = None
         try:

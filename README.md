@@ -301,6 +301,35 @@ To disable web tools, remove them from `~/.config/kon/config.toml`:
 extra = []
 ```
 
+### Background tasks and subagents
+
+Kon can run work concurrently and delegate focused work to nested agents, similar to Claude Code. These tools are enabled by default:
+
+| Tool | What it does |
+| --- | --- |
+| `bash` (`background=true`) | Start a long-running command detached (dev server, watcher, build). Returns a background task id (`bg_1`) instead of blocking. |
+| `bash_output` | Read output produced by a background task since the last check, plus its status (`running`, `completed`, `failed`, `killed`). |
+| `kill_bash` | Terminate a running background task by id. |
+| `task` | Launch a **subagent** to autonomously handle a focused, self-contained piece of work and return a final report. |
+| `monitor` | Create **events and timers** that notify the agent when something happens, so it doesn't have to poll. |
+
+**Background tasks** are tracked for the lifetime of the Kon process. When a background command finishes, Kon notifies the agent automatically: if the agent is mid-run the completion is injected as a steer message so it can react immediately; if idle, the completion is surfaced in the transcript and folded into the next turn. Background processes are detached, so they keep running if you leave them alone.
+
+**Subagents** run their own agent loop with a separate context window and a restricted toolset (they never get the `task` tool, so there is no unbounded recursion). A subagent runs to completion without user interaction — its tool calls are auto-approved — and only its final report is returned to the parent agent, keeping the parent's context small. Built-in subagent types:
+
+- `general` — read, edit, and run commands for multi-step tasks (default)
+- `explore` — read-only searching and code understanding (cannot edit files)
+
+Because a subagent cannot see the current conversation or ask follow-up questions, give it a complete, self-contained prompt.
+
+**Monitors** are lightweight events and timers that notify the agent when a condition becomes true, using the same delivery path as background completions (a steer message mid-run, or folded into the next turn while idle). The agent creates them with the `monitor` tool and never has to poll. Kinds:
+
+- `timer` — fire once after `delay_seconds`, or repeatedly every `interval_seconds`
+- `bash_match` — fire when a background task's output matches a regex (e.g. `server listening on`)
+- `bash_status` — fire when a background task finishes
+
+Manage them with `action="list"` and `action="stop"`. Like background auto-notify, monitors only advance while the interactive TUI event loop is running (not in one-shot `-p` headless runs).
+
 ---
 
 ## Interactive TUI

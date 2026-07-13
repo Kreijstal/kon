@@ -16,13 +16,17 @@ import os
 import time
 import webbrowser
 from collections import deque
-from typing import ClassVar
+from typing import Any, ClassVar
 
 from textual import events, on
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 
 from kon import config, consume_config_warnings
+from kon.background import BackgroundTask, get_background_manager
+from kon.heartbeat import HEARTBEAT_INTERVAL_SECONDS, Heartbeat, HeartbeatStatus
+from kon.monitors import get_monitor_manager
+from kon.notify import notify
 from kon.tools_manager import get_tool_path
 from kon.version import VERSION
 
@@ -57,6 +61,7 @@ from .urls import extract_urls, url_label
 from .widgets import InfoBar, QueueDisplay, StatusLine, format_path
 
 _GIT_BRANCH_REFRESH_INTERVAL_SECONDS = 1.0
+BACKGROUND_POLL_INTERVAL_SECONDS = 2.0
 
 
 class Kon(
@@ -168,6 +173,13 @@ class Kon(
         self._steer_event: asyncio.Event | None = None
         self._exit_hints: list[str] = []
         self._session_start_time: float | None = None
+        self._heartbeat: Heartbeat | None = None
+        self._heartbeat_timer: Any = None
+        self._bg_poll_timer: Any = None
+        self._monitor_poll_timer: Any = None
+        # Completion notes for background tasks that finished while idle; flushed
+        # into the next agent run so the model learns about them.
+        self._pending_bg_notifications: list[str] = []
 
         self._pending_update_notice_version: str | None = None
         self._update_notice_shown = False
@@ -302,7 +314,101 @@ class Kon(
 
     def _sync_runtime_state(self) -> None:
         # Compatibility hook for mixin/unit-test fakes. Runtime is the source of truth.
-        return None
+        self._sync_heartbeat_identity()
+
+    def _heartbeat_status(self) -> HeartbeatStatus:
+        if self._is_running:
+            return "working"
+        return "idle"
+
+    def _sync_heartbeat_identity(self) -> None:
+        session = self._runtime.session
+        if session is None:
+            return
+        if self._heartbeat is None:
+            self._heartbeat = Heartbeat(
+                session_id=session.id,
+                cwd=self._cwd,
+                provider=self._runtime.model_provider,
+                model=self._runtime.model,
+                status=self._heartbeat_status(),
+            )
+        else:
+            self._heartbeat.update_identity(
+                session_id=session.id,
+                cwd=self._cwd,
+                provider=self._runtime.model_provider,
+                model=self._runtime.model,
+            )
+
+    def _set_heartbeat_status(self, status: HeartbeatStatus) -> None:
+        if self._heartbeat is not None:
+            self._heartbeat.beat(status=status, activity=True)
+
+    def _heartbeat_tick(self) -> None:
+        if self._heartbeat is None:
+            self._sync_heartbeat_identity()
+        if self._heartbeat is not None:
+            self._heartbeat.beat(status=self._heartbeat_status())
+
+    def on_unmount(self) -> None:
+        if self._heartbeat is not None:
+            self._heartbeat.stop()
+
+    @staticmethod
+    def _format_bg_notification(task: BackgroundTask) -> str:
+        exit_part = f" exit={task.returncode}" if task.returncode is not None else ""
+        return (
+            f"<background-task id={task.id} status={task.status}{exit_part}>\n"
+            f"The background command finished: {task.command}\n"
+            f'Use the bash_output tool with bash_id="{task.id}" to read its full output '
+            "if you need the details.\n"
+            "</background-task>"
+        )
+
+    def _inject_agent_notification(self, note: str, summary: str) -> None:
+        """Surface an async event (background completion, monitor fire) to the
+        agent: as a steer message while it runs, or folded into the next turn
+        while idle. Always shown in the transcript with a sound."""
+        chat = self.query_one("#chat-log", ChatLog)
+        chat.add_info_message(summary)
+        if config.notifications.enabled:
+            notify("completion")
+        if self._is_running:
+            self._enqueue_background_steer(note, summary)
+        elif note not in self._pending_bg_notifications:
+            # Dedupe so a recurring timer firing while idle can't balloon the queue.
+            self._pending_bg_notifications.append(note)
+
+    def _poll_background_tasks(self) -> None:
+        try:
+            completed = get_background_manager().poll_completed()
+        except Exception:
+            return
+        for task in completed:
+            summary = f"Background task {task.id} {task.status}"
+            if task.returncode is not None:
+                summary += f" (exit {task.returncode})"
+            self._inject_agent_notification(self._format_bg_notification(task), summary)
+
+    def _poll_monitors(self) -> None:
+        try:
+            fired = get_monitor_manager().poll()
+        except Exception:
+            return
+        for monitor, message in fired:
+            self._inject_agent_notification(message, f"Monitor {monitor.id} fired")
+
+    def _enqueue_background_steer(self, query_text: str, display_text: str) -> None:
+        # Surface completion to a running agent as a steer message so it can react
+        # without waiting for the user. If the steer queue is full, the task is
+        # still visible in the UI and reachable via bash_output.
+        if len(self._steer_queue) >= QueueDisplay.MAX_QUEUE:
+            return
+        self._steer_queue.append((display_text, query_text, []))
+        if self._steer_event is not None:
+            self._steer_event.set()
+        self._update_queue_display()
 
     @on(events.TextSelected)
     def _on_text_selected(self) -> None:
@@ -334,6 +440,14 @@ class Kon(
             return
 
         self._session_start_time = time.time()
+        self._sync_heartbeat_identity()
+        self._heartbeat_timer = self.set_interval(HEARTBEAT_INTERVAL_SECONDS, self._heartbeat_tick)
+        self._bg_poll_timer = self.set_interval(
+            BACKGROUND_POLL_INTERVAL_SECONDS, self._poll_background_tasks
+        )
+        self._monitor_poll_timer = self.set_interval(
+            BACKGROUND_POLL_INTERVAL_SECONDS, self._poll_monitors
+        )
 
         self._sync_slash_commands()
 
