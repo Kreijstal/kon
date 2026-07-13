@@ -81,6 +81,9 @@ class CommandsMixin(SettingsCommands, ModelCommands, SessionCommands, AuthComman
         if cmd == "compact":
             self._handle_compact_command()
             return True
+        if cmd == "heartbeat":
+            self._handle_heartbeat_command()
+            return True
 
         return False
 

@@ -361,6 +361,7 @@ class ChatLog(VerticalScroll):
             ("/logout", "Logout from a provider"),
             ("/export", "Export session to HTML file"),
             ("/copy", "Copy last agent response text to clipboard"),
+            ("/heartbeat", "Show active Kon sessions"),
         ]
         _append_aligned_section(text, "Commands", commands, **colors)
 

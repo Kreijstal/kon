@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from kon import config
+from kon.heartbeat import cleanup_heartbeats, list_heartbeats
 
 from ...session import Session, SessionInfo
 from ..chat import ChatLog
@@ -22,6 +23,18 @@ from .base import CommandSupport
 class SessionCommands(CommandSupport):
     HANDOFF_BACKLINK_TYPE = "handoff_backlink"
     HANDOFF_FORWARD_LINK_TYPE = "handoff_forward_link"
+
+    @staticmethod
+    def _format_heartbeat_age(seconds: float) -> str:
+        if seconds < 1:
+            return "now"
+        if seconds < 60:
+            return f"{int(seconds)}s ago"
+        minutes = int(seconds // 60)
+        if minutes < 60:
+            return f"{minutes}m ago"
+        hours = int(minutes // 60)
+        return f"{hours}h ago"
 
     def _clear_conversation(self) -> None:
         if self._runtime.session:
@@ -99,6 +112,25 @@ class SessionCommands(CommandSupport):
 
         chat.show_spinner_status("Creating handoff...")
         self.run_worker(self._do_handoff(query), exclusive=False)
+
+    def _handle_heartbeat_command(self) -> None:
+        chat = self.query_one("#chat-log", ChatLog)
+        cleanup_heartbeats()
+        records = list_heartbeats()
+        if not records:
+            chat.add_info_message("No active Kon heartbeats")
+            return
+
+        lines = ["Active Kon sessions:"]
+        for record in records:
+            model = record.model or "unknown-model"
+            provider = record.provider or "unknown-provider"
+            age = self._format_heartbeat_age(record.age_seconds())
+            lines.append(
+                f"- {record.session_id[:8]} pid={record.pid} {record.status} "
+                f"{provider}/{model} heartbeat={age} cwd={format_path(record.cwd)}"
+            )
+        chat.add_info_message("\n".join(lines))
 
     def _resolve_system_prompt(self, session: Session | None = None) -> str:
         return self._runtime.resolve_system_prompt(session)

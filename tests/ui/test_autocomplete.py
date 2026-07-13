@@ -288,6 +288,7 @@ def test_default_slash_commands_include_settings_copy_compact_and_handoff():
     assert "copy" in names
     assert "compact" in names
     assert "handoff" in names
+    assert "heartbeat" in names
     assert "themes" not in names
     assert "permissions" not in names
     assert "thinking" not in names

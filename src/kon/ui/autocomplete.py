@@ -437,4 +437,5 @@ DEFAULT_COMMANDS = [
     SlashCommand("export", "export session to HTML"),
     SlashCommand("copy", "copy last agent response text"),
     SlashCommand("compact", "compact current conversation now"),
+    SlashCommand("heartbeat", "show active kon sessions"),
 ]
