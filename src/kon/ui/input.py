@@ -91,6 +91,10 @@ def _get_textarea_theme() -> TextAreaTheme:
 
 
 class Kon(TextArea):
+    BINDINGS: ClassVar[list] = [
+        Binding("ctrl+backspace", "delete_word_left", "Delete previous word", show=False)
+    ]
+
     class ScrollInfo(Message):
         def __init__(self, lines_above: int, lines_below: int) -> None:
             super().__init__()
