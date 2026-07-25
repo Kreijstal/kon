@@ -8,6 +8,7 @@ from types import SimpleNamespace
 from typing import TYPE_CHECKING, ClassVar
 
 from rich.style import Style
+from rich.text import Text
 from textual import events
 from textual._ansi_sequences import ANSI_SEQUENCES_KEYS
 from textual.app import ComposeResult
@@ -54,6 +55,31 @@ _SHELL_COMMAND_LLM_CLASS = "-shell-command-llm"
 _TEXTAREA_THEME = "kon-input"
 
 
+def _stylize_slash_commands(line: Text, names: frozenset[str] | set[str]) -> None:
+    """Color known /cmd tokens with the badge label style (same as tool badges)."""
+    if not names:
+        return
+    plain = line.plain
+    badge_style = Style(color=config.ui.colors.badge.label, bold=True)
+    for name in names:
+        token = f"/{name}"
+        start = 0
+        while True:
+            idx = plain.find(token, start)
+            if idx == -1:
+                break
+            end = idx + len(token)
+            before_ok = (
+                idx == 0 or plain[idx - 1].isspace() or plain[idx - 1] == _SKILL_TRIGGER_MARKER
+            )
+            after_ok = (
+                end >= len(plain) or plain[end].isspace() or plain[end] == _SKILL_TRIGGER_MARKER
+            )
+            if before_ok and after_ok:
+                line.stylize(badge_style, idx, end)
+            start = end
+
+
 def _get_textarea_theme() -> TextAreaTheme:
     colors = config.ui.colors
     return TextAreaTheme(
@@ -80,6 +106,10 @@ class Kon(TextArea):
         super().__init__(**kwargs)
         self._on_paste_transform = on_paste
         self._on_empty_key = on_empty_key or (lambda _key: False)
+        self._slash_command_names: frozenset[str] = frozenset()
+
+    def set_slash_command_names(self, names: set[str] | frozenset[str]) -> None:
+        self._slash_command_names = frozenset(names)
 
     async def _on_key(self, event: events.Key) -> None:
         future = getattr(self.app, "_approval_future", None)
@@ -108,6 +138,7 @@ class Kon(TextArea):
         image_style = Style(color=config.ui.colors.bg, bgcolor=config.ui.colors.notice, bold=True)
         for match in _IMAGE_MARKER_RE.finditer(line.plain):
             line.stylize(image_style, match.start(), match.end())
+        _stylize_slash_commands(line, self._slash_command_names)
         return line
 
     def action_delete_left(self) -> None:
@@ -264,6 +295,7 @@ class InputBox(Vertical):
         textarea.cursor_blink = False
         textarea.show_line_numbers = False
         textarea.highlight_cursor_line = False
+        self._sync_slash_command_names()
         self._set_shell_mode(self._shell_mode)
 
     def _handle_empty_key(self, key: str) -> bool:
@@ -321,6 +353,16 @@ class InputBox(Vertical):
 
     def set_commands(self, commands: list[SlashCommand]) -> None:
         self._slash_provider.commands = commands
+        self._sync_slash_command_names()
+
+    def _sync_slash_command_names(self) -> None:
+        try:
+            textarea = self.query_one("#input-textarea", Kon)
+        except Exception:
+            return
+        setter = getattr(textarea, "set_slash_command_names", None)
+        if callable(setter):
+            setter({cmd.name for cmd in self._slash_provider.commands})
 
     def set_fd_path(self, fd_path: str | None) -> None:
         self._file_provider.set_fd_path(fd_path)
@@ -559,8 +601,8 @@ class InputBox(Vertical):
                 app_on_key(events.Key("enter", "enter"))
                 return
         if self._is_completing:
-            # Tell app to apply the current selection
-            self.post_message(self.CompletionSelect())
+            # Tell app to apply the current selection (Enter may auto-submit)
+            self.post_message(self.CompletionSelect(allow_submit=True))
             return
         if getattr(self.app, "start_queue_edit", lambda: False)():
             return
@@ -676,11 +718,11 @@ class InputBox(Vertical):
     async def _do_tab_complete(self) -> None:
         """Perform tab completion asynchronously."""
         if self._is_completing:
-            # Path alternatives: cycle. Autocomplete (/, @, #): apply selection.
+            # Path alternatives: cycle. Autocomplete (/, @, #): apply into editor.
             if self._tab_completing:
                 self.post_message(self.CompletionMove(1))
             else:
-                self.post_message(self.CompletionSelect())
+                self.post_message(self.CompletionSelect(allow_submit=False))
             return
 
         textarea = self.query_one("#input-textarea", TextArea)
@@ -750,12 +792,12 @@ class InputBox(Vertical):
     # Completion application (called by app after selection)
     # -------------------------------------------------------------------------
 
-    def apply_slash_command(self, item: ListItem) -> None:
+    def apply_slash_command(self, item: ListItem, *, allow_submit: bool = True) -> None:
         cmd: SlashCommand = item.value
         self._is_completing = False
         self._active_provider = None
 
-        if cmd.submit_on_select and not cmd.is_skill:
+        if allow_submit and cmd.submit_on_select and not cmd.is_skill:
             self._completion_prefix = ""
             self._suppress_autocomplete = 1  # clear() = 1 event
             self.clear(reset_pastes=True)
@@ -902,7 +944,9 @@ class InputBox(Vertical):
         pass
 
     class CompletionSelect(Message):
-        pass
+        def __init__(self, *, allow_submit: bool = True) -> None:
+            super().__init__()
+            self.allow_submit = allow_submit
 
     class CompletionMove(Message):
         def __init__(self, direction: int) -> None:

@@ -54,7 +54,9 @@ def test_tab_applies_slash_autocomplete_selection(tmp_path, monkeypatch) -> None
 
     input_box.action_tab_complete()
 
-    assert any(isinstance(m, InputBox.CompletionSelect) for m in input_box.posted_messages)
+    selects = [m for m in input_box.posted_messages if isinstance(m, InputBox.CompletionSelect)]
+    assert len(selects) == 1
+    assert selects[0].allow_submit is False
     assert not any(isinstance(m, InputBox.CompletionMove) for m in input_box.posted_messages)
 
 

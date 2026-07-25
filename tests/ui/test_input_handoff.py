@@ -51,3 +51,30 @@ def test_handoff_slash_command_selection_inserts_text_not_submit() -> None:
 
     assert input_box.posted == []
     assert input_box._fake_textarea.text == "/handoff "
+
+
+def test_tab_slash_selection_inserts_even_when_submit_on_select() -> None:
+    input_box = _TestableInputBox("/cle")
+    input_box._completion_prefix = "/cle"
+
+    clear_cmd = SlashCommand("clear", "Clear the conversation", submit_on_select=True)
+    input_box.apply_slash_command(
+        ListItem(value=clear_cmd, label="/clear", description=""), allow_submit=False
+    )
+
+    assert input_box.posted == []
+    assert input_box._fake_textarea.text == "/clear "
+
+
+def test_enter_slash_selection_submits_when_submit_on_select() -> None:
+    input_box = _TestableInputBox("/cle")
+    input_box._completion_prefix = "/cle"
+
+    clear_cmd = SlashCommand("clear", "Clear the conversation", submit_on_select=True)
+    input_box.apply_slash_command(
+        ListItem(value=clear_cmd, label="/clear", description=""), allow_submit=True
+    )
+
+    assert len(input_box.posted) == 1
+    assert input_box.posted[0].text == "/clear"
+    assert input_box._fake_textarea.text == ""

@@ -162,7 +162,7 @@ class CompletionUIMixin:
         self._hide_completion_list()
 
         if isinstance(provider, SlashCommandProvider):
-            input_box.apply_slash_command(item)
+            input_box.apply_slash_command(item, allow_submit=event.allow_submit)
         elif isinstance(provider, FilePathProvider | PullRequestProvider):
             input_box.apply_provider_completion(item)
 

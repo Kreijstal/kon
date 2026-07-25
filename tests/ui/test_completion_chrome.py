@@ -114,8 +114,9 @@ class FakeInputBox:
     def apply_tab_path_completion(self, item: ListItem) -> None:
         self.tab_completed_items.append(item)
 
-    def apply_slash_command(self, item: ListItem) -> None:
+    def apply_slash_command(self, item: ListItem, *, allow_submit: bool = True) -> None:
         self.slash_completed_items.append(item)
+        self.slash_allow_submit = allow_submit
 
     def apply_file_completion(self, item: ListItem) -> None:
         self.file_completed_items.append(item)
@@ -378,10 +379,24 @@ def test_completion_select_terminal_paths_restore_info_bar(case: str) -> None:
         assert app.input_box.tab_completed_items == [item]
     elif case == "slash":
         assert app.input_box.slash_completed_items == [item]
+        assert app.input_box.slash_allow_submit is True
         assert app.input_box.completing is False
     elif case == "file":
         assert app.input_box.provider_completed_items == [item]
         assert app.input_box.completing is False
+
+
+def test_completion_select_tab_slash_forwards_allow_submit_false() -> None:
+    item = ListItem(value="value", label="value")
+    app = FakeKon(selected_item=item, completion_visible=True)
+    app.input_box.active_provider = SlashCommandProvider(
+        [SlashCommand(name="help", description="help")]
+    )
+
+    app.on_completion_select(InputBox.CompletionSelect(allow_submit=False))
+
+    assert app.input_box.slash_completed_items == [item]
+    assert app.input_box.slash_allow_submit is False
 
 
 def test_completion_select_final_selection_mode_restores_info_bar() -> None:
