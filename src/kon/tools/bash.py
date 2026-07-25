@@ -23,6 +23,12 @@ _SUBPROCESS_DRAIN_TIMEOUT_SECONDS = 1.0
 
 _IS_WINDOWS: bool = sys.platform == "win32"
 _ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;]*[a-zA-Z]|\x1b\][^\x07]*\x07|\x1b[()][AB012]")
+# Absolute Windows drive paths inside bash -c strings (basic, not shell-aware).
+# Quoted form allows spaces; unquoted stops at whitespace/shell metacharacters.
+_WIN_QUOTED_DRIVE_PATH_RE = re.compile(r'"([A-Za-z]):((?:[\\/]+[^\\/:*?"<>|\r\n]*)+)"')
+_WIN_UNQUOTED_DRIVE_PATH_RE = re.compile(
+    r'(?<![A-Za-z0-9_/])([A-Za-z]):((?:[\\/]+[^\s\\/:*?"<>|;|&()]+)+)'
+)
 
 
 def _get_env() -> dict[str, str]:
@@ -51,6 +57,32 @@ def _get_shell() -> str | None:
     return os.environ.get("SHELL") or "/bin/bash"
 
 
+def _win_drive_path_to_msys(drive: str, path: str) -> str:
+    """C: + \\foo\\bar -> /c/foo/bar (Git Bash / MSYS form)."""
+    normalized = re.sub(r"[\\/]+", "/", path)
+    return f"/{drive.lower()}{normalized}"
+
+
+def _rewrite_windows_paths_for_bash(command: str) -> str:
+    """Rewrite absolute Windows drive paths for Git Bash -c commands.
+
+    Basic fix only: converts ``C:\\foo\\bar`` / ``C:/foo/bar`` to ``/c/foo/bar``.
+    Does not handle UNC paths, full shell parsing, or cygpath edge cases.
+    """
+    if not _IS_WINDOWS:
+        return command
+
+    def repl_quoted(match: re.Match[str]) -> str:
+        return f'"{_win_drive_path_to_msys(match.group(1), match.group(2))}"'
+
+    def repl_unquoted(match: re.Match[str]) -> str:
+        return _win_drive_path_to_msys(match.group(1), match.group(2))
+
+    # Quoted first so spaces inside "C:\\Program Files\\..." are preserved.
+    command = _WIN_QUOTED_DRIVE_PATH_RE.sub(repl_quoted, command)
+    return _WIN_UNQUOTED_DRIVE_PATH_RE.sub(repl_unquoted, command)
+
+
 def _get_spawn_argv(command: str) -> list[str] | None:
     """Return the argv to exec the command through a shell, or None to use the
     platform's default shell mechanism.
@@ -63,6 +95,8 @@ def _get_spawn_argv(command: str) -> list[str] | None:
     shell = _get_shell()
     if shell is None:
         return None
+    if _IS_WINDOWS:
+        command = _rewrite_windows_paths_for_bash(command)
     return [shell, "-c", command]
 
 

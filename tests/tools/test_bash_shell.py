@@ -10,7 +10,13 @@ import os
 import pytest
 
 from kon.tools import bash
-from kon.tools.bash import BashParams, BashTool, _get_shell, _get_spawn_argv
+from kon.tools.bash import (
+    BashParams,
+    BashTool,
+    _get_shell,
+    _get_spawn_argv,
+    _rewrite_windows_paths_for_bash,
+)
 
 # Built with os.path.join so the expected separators match the host the test
 # runs on; the space in "Program Files" is what the regression is about.
@@ -75,6 +81,51 @@ def test_spawn_argv_posix(monkeypatch):
     monkeypatch.setattr(bash, "_IS_WINDOWS", False)
     monkeypatch.setenv("SHELL", "/bin/zsh")
     assert _get_spawn_argv("echo hi") == ["/bin/zsh", "-c", "echo hi"]
+
+
+def test_rewrite_windows_paths_backslash(windows):
+    # Issue #83 repro: absolute Windows paths inside bash -c.
+    assert (
+        _rewrite_windows_paths_for_bash(r"cd C:\tmp\kon\issues\83 && pwd")
+        == "cd /c/tmp/kon/issues/83 && pwd"
+    )
+
+
+def test_rewrite_windows_paths_forward_slash(windows):
+    assert (
+        _rewrite_windows_paths_for_bash("cd C:/tmp/kon/issues/83 && pwd")
+        == "cd /c/tmp/kon/issues/83 && pwd"
+    )
+
+
+def test_rewrite_windows_paths_doubled_backslashes(windows):
+    assert (
+        _rewrite_windows_paths_for_bash(r"cd C:\\tmp\\kon\\issues\\83 && pwd")
+        == "cd /c/tmp/kon/issues/83 && pwd"
+    )
+
+
+def test_rewrite_windows_paths_leaves_msys_and_relative(windows):
+    assert _rewrite_windows_paths_for_bash("cd /c/tmp/foo && pwd") == "cd /c/tmp/foo && pwd"
+    assert _rewrite_windows_paths_for_bash("cd .. && ls") == "cd .. && ls"
+
+
+def test_rewrite_windows_paths_quoted_with_spaces(windows):
+    assert (
+        _rewrite_windows_paths_for_bash(r'ls "C:\Program Files\Git"')
+        == 'ls "/c/Program Files/Git"'
+    )
+
+
+def test_rewrite_windows_paths_noop_on_posix(monkeypatch):
+    monkeypatch.setattr(bash, "_IS_WINDOWS", False)
+    assert _rewrite_windows_paths_for_bash(r"cd C:\tmp\foo") == r"cd C:\tmp\foo"
+
+
+def test_spawn_argv_rewrites_windows_drive_paths(windows, monkeypatch):
+    monkeypatch.setattr(os.path, "exists", lambda path: path == WIN_BASH)
+    argv = _get_spawn_argv(r"cd C:\tmp\kon\issues\83 && pwd")
+    assert argv == [WIN_BASH, "-c", "cd /c/tmp/kon/issues/83 && pwd"]
 
 
 @pytest.mark.asyncio
