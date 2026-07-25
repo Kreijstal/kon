@@ -446,15 +446,34 @@ class InputBox(Vertical):
     def _extract_selected_skill_submission(self, text: str) -> tuple[str | None, str | None]:
         pattern = re.compile(rf"{_SKILL_TRIGGER_MARKER}/([a-z0-9-]+){_SKILL_TRIGGER_MARKER}")
         match = pattern.search(text)
-        if not match:
+        if match:
+            skill_name = match.group(1)
+            if skill_name in self._selected_skill_commands:
+                query = (text[: match.start()] + text[match.end() :]).strip()
+                return skill_name, self._strip_skill_markers(query)
+
+        # History recall / manual typing: plain leading /skillname [args]
+        return self._match_leading_skill_command(self._strip_skill_markers(text))
+
+    def _match_leading_skill_command(self, text: str) -> tuple[str | None, str | None]:
+        stripped = text.strip()
+        if not stripped.startswith("/"):
             return None, None
 
-        skill_name = match.group(1)
-        if skill_name not in self._selected_skill_commands:
+        parts = stripped[1:].split(None, 1)
+        if not parts:
             return None, None
 
-        query = (text[: match.start()] + text[match.end() :]).strip()
-        return skill_name, self._strip_skill_markers(query)
+        name = parts[0]
+        if not re.fullmatch(r"[a-z0-9-]+", name):
+            return None, None
+
+        skill_names = {cmd.name for cmd in self._slash_provider.commands if cmd.is_skill}
+        if name not in skill_names:
+            return None, None
+
+        query = parts[1] if len(parts) > 1 else ""
+        return name, query
 
     # -------------------------------------------------------------------------
     # Text change handling - trigger autocomplete
