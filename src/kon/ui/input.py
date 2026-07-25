@@ -675,9 +675,12 @@ class InputBox(Vertical):
 
     async def _do_tab_complete(self) -> None:
         """Perform tab completion asynchronously."""
-        # If already completing, treat Tab as moving down in the list
         if self._is_completing:
-            self.post_message(self.CompletionMove(1))
+            # Path alternatives: cycle. Autocomplete (/, @, #): apply selection.
+            if self._tab_completing:
+                self.post_message(self.CompletionMove(1))
+            else:
+                self.post_message(self.CompletionSelect())
             return
 
         textarea = self.query_one("#input-textarea", TextArea)
