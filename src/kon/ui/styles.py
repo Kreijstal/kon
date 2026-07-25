@@ -53,6 +53,14 @@ Screen {{
     border: none;
 }}
 
+.thinking-block.-empty,
+.content-block.-empty {{
+    display: none;
+    height: 0;
+    margin: 0;
+    padding: 0;
+}}
+
 #thinking-content {{
     color: {colors.subtle};
     text-style: italic;

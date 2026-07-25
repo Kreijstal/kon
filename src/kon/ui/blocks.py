@@ -133,7 +133,10 @@ class _StreamingMarkdownMixin:
             # put the final render on the label. Don't overwrite it.
             return
         self._refresh_completed_display()
-        self._streaming_update_label(self._render_streaming_display())
+        display = self._render_streaming_display()
+        self._streaming_update_label(display)
+        if display.plain:
+            self.remove_class("-empty")  # pyright: ignore[reportAttributeAccessIssue]
 
     def _append_streaming(self, text: str) -> None:
         self._pending += text
@@ -164,6 +167,8 @@ class ThinkingBlock(_StreamingMarkdownMixin, Static):
         self._label: Label | None = None
         self._init_streaming()
         self.add_class("thinking-block")
+        if not content:
+            self.add_class("-empty")
 
     def compose(self) -> ComposeResult:
         if self._finalized and self._content and config.ui.collapse_thinking:
@@ -225,6 +230,7 @@ class ThinkingBlock(_StreamingMarkdownMixin, Static):
         if self._content and not self._finalized:
             self._finalized = True
             self.label.update(self._flush_streaming())
+            self.remove_class("-empty")
             self.call_after_refresh(self._do_finalize)
 
     def _do_finalize(self) -> None:
@@ -234,6 +240,8 @@ class ThinkingBlock(_StreamingMarkdownMixin, Static):
     def set_content(self, text: str) -> None:
         self._content = text
         self._finalized = True
+        if text:
+            self.remove_class("-empty")
         if config.ui.collapse_thinking:
             self.label.update(self._format_collapsed())
         else:
@@ -259,6 +267,8 @@ class ContentBlock(_StreamingMarkdownMixin, Static):
         self._label: Label | None = None
         self._init_streaming()
         self.add_class("content-block")
+        if not content:
+            self.add_class("-empty")
 
     def compose(self) -> ComposeResult:
         if self._finalized and self._content:
@@ -283,6 +293,7 @@ class ContentBlock(_StreamingMarkdownMixin, Static):
         if self._content and not self._finalized:
             self._finalized = True
             self.label.update(self._flush_streaming())
+            self.remove_class("-empty")
             self.call_after_refresh(self._do_finalize)
 
     def _do_finalize(self) -> None:
@@ -292,6 +303,8 @@ class ContentBlock(_StreamingMarkdownMixin, Static):
     def set_content(self, text: str) -> None:
         self._content = text
         self._finalized = True
+        if text:
+            self.remove_class("-empty")
         self.label.update(format_markdown(self._content))
 
 

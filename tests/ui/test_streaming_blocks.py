@@ -57,6 +57,16 @@ def test_content_block_buffers_partial_line_until_newline():
     block._append_streaming("hello")
 
     assert updates == []
+    assert block.has_class("-empty")
+
+
+def test_content_block_reveals_when_streaming_text_is_rendered():
+    block = ContentBlock()
+    _capture_updates(block)
+
+    block._append_streaming("hello\n")
+
+    assert not block.has_class("-empty")
 
 
 def test_content_block_commits_completed_lines_and_buffers_tail():
@@ -105,6 +115,16 @@ def test_thinking_block_buffers_partial_line_until_newline():
     block._append_streaming("thinking")
 
     assert updates == []
+    assert block.has_class("-empty")
+
+
+def test_thinking_block_reveals_when_streaming_text_is_rendered():
+    block = ThinkingBlock()
+    _capture_updates(block)
+
+    block._append_streaming("thinking\n")
+
+    assert not block.has_class("-empty")
 
 
 def test_boundary_after_blank_line_between_paragraphs():
