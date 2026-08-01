@@ -15,7 +15,7 @@ from kon.background import get_background_manager, reset_background_manager
 from kon.monitors import get_monitor_manager, reset_monitor_manager
 from kon.tools.bash import BashParams, BashTool
 from kon.ui.app import Kon
-from kon.ui.queue_ui import QueuedPrompt
+from kon.ui.queue_ui import QueuedPrompt, _unpack_queue_item
 
 
 class _FakeChat:
@@ -85,7 +85,7 @@ async def test_completion_while_running_injects_steer_message():
     assert any("bg_1 completed" in m for m in app._chat.messages)
     # ...and injected as a steer message with the event set so the loop breaks.
     assert len(app._steer_queue) == 1
-    _display, query, _images = app._steer_queue[0]
+    _display, query, _images = _unpack_queue_item(app._steer_queue[0])
     assert "<background-task id=bg_1 status=completed" in query
     assert 'bash_output tool with bash_id="bg_1"' in query
     assert app._steer_event.is_set()
@@ -130,7 +130,7 @@ async def test_monitor_fire_injects_steer_while_running():
     app._poll_monitors()
 
     assert len(app._steer_queue) == 1
-    _display, query, _images = app._steer_queue[0]
+    _display, query, _images = _unpack_queue_item(app._steer_queue[0])
     assert "Timer fired: wake up" in query
     assert app._steer_event.is_set()
 
@@ -151,7 +151,7 @@ async def test_monitor_tool_to_app_notify_end_to_end():
     app._poll_monitors()
 
     assert len(app._steer_queue) == 1
-    _display, query, _images = app._steer_queue[0]
+    _display, query, _images = _unpack_queue_item(app._steer_queue[0])
     assert "kind=bash_status bash_id=bg_1" in query
     assert "build done" in query
     # One-shot monitor is consumed.

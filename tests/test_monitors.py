@@ -113,7 +113,7 @@ async def test_bash_status_fires_on_completion():
     mgr.create_bash_status("done", bash_id="bg_1")
 
     # While running: no fire.
-    if task.is_running:
+    if task is not None and task.is_running:
         assert mgr.poll() == []
     await _wait_done(task)
     fired = mgr.poll()
@@ -133,23 +133,23 @@ async def test_tool_create_list_stop_timer():
         MonitorParams(kind="timer", description="ping", interval_seconds=30)
     )
     assert created.success
-    assert "mon_1" in created.result
+    assert created.result is not None and "mon_1" in created.result
 
     listed = await tool.execute(MonitorParams(action="list"))
-    assert "mon_1" in listed.result
+    assert listed.result is not None and "mon_1" in listed.result
 
     stopped = await tool.execute(MonitorParams(action="stop", monitor_id="mon_1"))
     assert stopped.success
 
     listed2 = await tool.execute(MonitorParams(action="list"))
-    assert "No active monitors" in listed2.result
+    assert listed2.result is not None and "No active monitors" in listed2.result
 
 
 @pytest.mark.asyncio
 async def test_tool_timer_requires_time_arg():
     result = await MonitorTool().execute(MonitorParams(kind="timer", description="x"))
     assert not result.success
-    assert "delay_seconds or interval_seconds" in result.result
+    assert result.result is not None and "delay_seconds or interval_seconds" in result.result
 
 
 @pytest.mark.asyncio
@@ -158,14 +158,14 @@ async def test_tool_bash_match_validates_task_and_regex():
         MonitorParams(kind="bash_match", bash_id="bg_99", pattern="x")
     )
     assert not unknown.success
-    assert "No background task" in unknown.result
+    assert unknown.result is not None and "No background task" in unknown.result
 
     await BashTool().execute(BashParams(command="sleep 5", background=True))
     bad_regex = await MonitorTool().execute(
         MonitorParams(kind="bash_match", bash_id="bg_1", pattern="(")
     )
     assert not bad_regex.success
-    assert "Invalid regex" in bad_regex.result
+    assert bad_regex.result is not None and "Invalid regex" in bad_regex.result
 
 
 @pytest.mark.asyncio

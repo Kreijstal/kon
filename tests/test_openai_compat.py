@@ -101,7 +101,7 @@ def test_openai_completions_replays_thinking_only_assistant_messages() -> None:
         content=[ThinkingContent(thinking="private reasoning", signature="reasoning_content")]
     )
 
-    converted = provider._convert_assistant_message(message)
+    converted: dict[str, Any] = cast(dict[str, Any], provider._convert_assistant_message(message))
 
     assert converted["role"] == "assistant"
     assert converted["content"] == ""
@@ -122,7 +122,7 @@ def test_openai_completions_replays_deepseek_assistant_content_as_string() -> No
         ]
     )
 
-    converted = provider._convert_assistant_message(message)
+    converted: dict[str, Any] = cast(dict[str, Any], provider._convert_assistant_message(message))
 
     assert converted["content"] == "visible answer"
     assert converted["reasoning_content"] == "private reasoning"
@@ -139,7 +139,7 @@ def test_openai_completions_replays_deepseek_tool_calls_with_empty_reasoning() -
         content=[ToolCall(id="call-1", name="bash", arguments={"command": "true"})]
     )
 
-    converted = provider._convert_assistant_message(message)
+    converted: dict[str, Any] = cast(dict[str, Any], provider._convert_assistant_message(message))
 
     assert converted["content"] == ""
     assert converted["reasoning_content"] == ""
@@ -161,7 +161,7 @@ def test_openai_completions_replays_deepseek_text_with_empty_reasoning() -> None
 
     message = AssistantMessage(content=[TextContent(text="visible answer")])
 
-    converted = provider._convert_assistant_message(message)
+    converted: dict[str, Any] = cast(dict[str, Any], provider._convert_assistant_message(message))
 
     assert converted["content"] == "visible answer"
     assert converted["reasoning_content"] == ""

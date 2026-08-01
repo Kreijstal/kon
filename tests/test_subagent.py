@@ -192,9 +192,7 @@ async def test_parent_agent_delegates_to_subagent_through_loop(tmp_path):
         if isinstance(event, ToolApprovalEvent) and event.future is not None:
             event.future.set_result(ApprovalResponse.APPROVE)
         elif isinstance(event, ToolResultEvent) and event.result is not None:
-            tool_result_text = "".join(
-                c.text for c in event.result.content if getattr(c, "text", None)
-            )
+            tool_result_text = "".join(str(getattr(c, "text", "")) for c in event.result.content)
         elif isinstance(event, TextEndEvent):
             final_text = event.text
         elif isinstance(event, AgentEndEvent):
