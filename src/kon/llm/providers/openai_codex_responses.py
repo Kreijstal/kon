@@ -369,14 +369,23 @@ class OpenAICodexResponsesProvider(BaseProvider):
             body["tools"] = tool_payload
 
         effort = self.config.thinking_level
-        if effort and effort != "none":
-            if effort == "minimal":
-                effort = "low"
-            elif effort == "ultra":
-                effort = "max"
+        if effort == "minimal":
+            effort = "low"
+        elif effort == "ultra":
+            effort = "max"
+
+        if uses_responses_lite:
+            # Responses Lite requires `reasoning.context` to always be
+            # `all_turns`, even when thinking is disabled; otherwise the
+            # backend rejects the request. Mirror the Codex CLI fix that
+            # constructs the reasoning payload unconditionally for lite models.
+            body["reasoning"] = {
+                "effort": effort or "none",
+                "summary": "auto",
+                "context": "all_turns",
+            }
+        elif effort and effort != "none":
             body["reasoning"] = {"effort": effort, "summary": "auto"}
-            if uses_responses_lite:
-                body["reasoning"]["context"] = "all_turns"
 
         temp = temperature if temperature is not None else self.config.temperature
         if temp is not None:

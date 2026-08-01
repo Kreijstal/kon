@@ -83,7 +83,11 @@ async def run_headless(
             if provider is not None
             else (config.llm.default_provider if model is None else None)
         )
-        base = base_url or config.llm.default_base_url or None
+        # The config's default_base_url is applied inside the runtime for the
+        # default provider only; passing it here would misroute explicitly
+        # selected models from other providers (e.g. openai-codex) to the
+        # default provider's host.
+        base = base_url or None
         thinking = config.llm.default_thinking_level
         openai_auth = openai_compat_auth_mode or config.llm.auth.openai_compat
         anthropic_auth = anthropic_compat_auth_mode or config.llm.auth.anthropic_compat
