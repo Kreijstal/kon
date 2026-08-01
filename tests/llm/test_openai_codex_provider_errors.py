@@ -187,7 +187,7 @@ def test_responses_lite_request_always_sends_reasoning_context_when_thinking_dis
 
 def test_responses_lite_request_always_sends_reasoning_context_when_thinking_unset():
     provider = OpenAICodexResponsesProvider(
-        ProviderConfig(model="gpt-5.6-sol", provider="openai-codex", thinking_level=None)
+        ProviderConfig(model="gpt-5.6-sol", provider="openai-codex", thinking_level="")
     )
 
     body = provider._build_request_body([], None, None, None)

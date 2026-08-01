@@ -75,7 +75,9 @@ class ConversationRuntime:
         self.model = model
         self.model_provider = model_provider
         self.api_key = api_key
-        self.base_url = base_url
+        # Keep the explicit CLI override separate from resolved model/session URLs.
+        # It intentionally wins for every provider selected during this runtime.
+        self.explicit_base_url = base_url
         self.thinking_level = thinking_level
         self.tools = tools
         self.openai_compat_auth_mode: AuthMode = openai_compat_auth_mode
@@ -124,21 +126,27 @@ class ConversationRuntime:
         # whose provider differs from the default was selected), use that
         # model's own endpoint instead of routing requests to the default
         # provider's host.
-        effective_provider = provider
-        if effective_provider is None:
-            effective_provider = (
-                model_info.provider if model_info is not None else kon_config.llm.default_provider
-            )
+        effective_provider = (
+            model_info.provider
+            if model_info is not None
+            else provider or kon_config.llm.default_provider
+        )
         config_override = (
-            kon_config.llm.default_base_url
+            (kon_config.llm.default_base_url or None)
             if effective_provider == kon_config.llm.default_provider
             else None
         )
 
         if model_info:
-            return model_info.api, self.base_url or config_override or model_info.base_url
-        api_type = resolve_provider_api_type(provider)
-        return api_type, self.base_url or config_override or default_base_url_for_api(api_type)
+            return (
+                model_info.api,
+                self.explicit_base_url or config_override or model_info.base_url,
+            )
+        api_type = resolve_provider_api_type(effective_provider)
+        return (
+            api_type,
+            self.explicit_base_url or config_override or default_base_url_for_api(api_type),
+        )
 
     def _new_agent(
         self, provider: BaseProvider, session: Session, context: Context | None = None
@@ -161,7 +169,7 @@ class ConversationRuntime:
         self.context = context
         model = self.model
         model_provider = self.model_provider
-        base_url_override = self.base_url
+        session_base_url: str | None = None
         thinking_level = self.thinking_level
 
         if resume_session:
@@ -170,8 +178,6 @@ class ConversationRuntime:
                 model_info = session.model
                 if model_info:
                     model_provider, model, session_base_url = model_info
-                    if base_url_override is None and session_base_url:
-                        base_url_override = session_base_url
                 thinking_level = session.thinking_level
         elif continue_recent:
             session = Session.continue_recent(
@@ -185,12 +191,10 @@ class ConversationRuntime:
                 model_info = session.model
                 if model_info:
                     model_provider, model, session_base_url = model_info
-                    if base_url_override is None and session_base_url:
-                        base_url_override = session_base_url
                 thinking_level = session.thinking_level
 
-        self.base_url = base_url_override
-        api_type, effective_base_url = self._model_api_and_base_url(model, model_provider)
+        api_type, resolved_base_url = self._model_api_and_base_url(model, model_provider)
+        effective_base_url = self.explicit_base_url or session_base_url or resolved_base_url
         provider_config = self._provider_config(
             model=model,
             provider=model_provider,
@@ -261,9 +265,11 @@ class ConversationRuntime:
             if selected_model
             else (self.provider.name if self.provider else self.model_provider or "openai")
         )
-        model_base_url = selected_model.base_url if selected_model else None
-        if model_base_url is None and self.provider:
-            model_base_url = self.provider.config.base_url
+        model_base_url = self.provider.config.base_url if self.provider else None
+        if model_base_url is None and selected_model:
+            _, model_base_url = self._model_api_and_base_url(
+                selected_model.id, selected_model.provider
+            )
 
         session = Session.create(
             self.cwd,
@@ -296,27 +302,28 @@ class ConversationRuntime:
             if self.provider
             else self.model_provider
         )
+        target_api_type, target_base_url = self._model_api_and_base_url(model.id, model.provider)
         current_base_url = self.provider.config.base_url if self.provider else None
-        base_url_changed = (current_base_url or "").rstrip("/") != (model.base_url or "").rstrip(
+        base_url_changed = (current_base_url or "").rstrip("/") != (target_base_url or "").rstrip(
             "/"
         )
         provider_changed = current_provider != model.provider
         replacement_provider: BaseProvider | None = None
 
-        if model.api != current_api_type or provider_changed or base_url_changed:
+        if target_api_type != current_api_type or provider_changed or base_url_changed:
             provider_config = self._provider_config(
                 model=model.id,
                 provider=model.provider,
-                base_url=model.base_url,
+                base_url=target_base_url,
                 session_id=self.session.id if self.session else None,
             )
-            replacement_provider = create_provider(model.api, provider_config)
+            replacement_provider = create_provider(target_api_type, provider_config)
 
         if replacement_provider is not None:
             self.provider = replacement_provider
         elif self.provider:
             self.provider.config.model = model.id
-            self.provider.config.base_url = model.base_url
+            self.provider.config.base_url = target_base_url
             self.provider.config.max_tokens = get_max_tokens(model.id)
             self.provider.config.provider = model.provider
 
@@ -324,7 +331,7 @@ class ConversationRuntime:
         self.model_provider = model.provider
 
         if self.session:
-            self.session.set_model(model.provider, model.id, model.base_url)
+            self.session.set_model(model.provider, model.id, target_base_url)
         if self.agent and self.provider:
             self.agent.provider = self.provider
 
@@ -347,11 +354,10 @@ class ConversationRuntime:
         if model_info:
             model_provider, model, session_base_url = model_info
             restored_model = get_model(model, model_provider)
-            restored_base_url = session_base_url or (
-                restored_model.base_url if restored_model else None
-            )
 
             if restored_model:
+                _, resolved_base_url = self._model_api_and_base_url(model, model_provider)
+                restored_base_url = self.explicit_base_url or session_base_url or resolved_base_url
                 current_api_type = self._current_provider_api_type()
                 if provider is None or restored_model.api != current_api_type:
                     provider_config = self._provider_config(
@@ -363,15 +369,20 @@ class ConversationRuntime:
                     )
                     provider = create_provider(restored_model.api, provider_config)
             elif provider is None:
-                api_type = resolve_provider_api_type(model_provider)
+                api_type, resolved_base_url = self._model_api_and_base_url(model, model_provider)
+                restored_base_url = self.explicit_base_url or session_base_url or resolved_base_url
                 provider_config = self._provider_config(
                     model=model,
                     provider=model_provider,
-                    base_url=restored_base_url or default_base_url_for_api(api_type),
+                    base_url=restored_base_url,
                     thinking_level=thinking_level,
                     session_id=session.id,
                 )
                 provider = create_provider(api_type, provider_config)
+            else:
+                restored_base_url = (
+                    self.explicit_base_url or session_base_url or provider.config.base_url
+                )
         else:
             restored_base_url = None
 

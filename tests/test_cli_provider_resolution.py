@@ -32,19 +32,21 @@ def testdefault_base_url_for_api_non_openai_completions():
 def _runtime(
     monkeypatch,
     *,
-    base_url=None,
-    default_provider="deepseek",
-    default_base_url="https://proxy.example.com/v1",
-):
+    base_url: str | None = None,
+    default_provider: str = "deepseek",
+    default_base_url: str = "https://proxy.example.com/v1",
+) -> ConversationRuntime:
     monkeypatch.setattr(kon_config.llm, "default_provider", default_provider)
     monkeypatch.setattr(kon_config.llm, "default_base_url", default_base_url)
-    rt = ConversationRuntime.__new__(ConversationRuntime)
-    rt.base_url = base_url
-    rt.api_key = None
-    rt.openai_compat_auth_mode = None
-    rt.anthropic_compat_auth_mode = None
-    rt.thinking_level = "none"
-    return rt
+    return ConversationRuntime(
+        cwd="/test/project",
+        model="deepseek-v4-flash",
+        model_provider=default_provider,
+        api_key=None,
+        base_url=base_url,
+        thinking_level="none",
+        tools=[],
+    )
 
 
 def test_non_default_provider_model_uses_its_own_base_url(monkeypatch):
