@@ -4,7 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-- No changes yet.
+### Fixed
+
+- Fixed OpenAI Codex Responses Lite error `requires reasoning.context to be all_turns` by always sending `reasoning.context: "all_turns"` for GPT-5.6 Codex models, even when thinking is disabled.
 
 ## 0.4.2 - 2026-07-20
 

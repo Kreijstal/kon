@@ -175,6 +175,26 @@ def test_responses_lite_request_strips_image_detail():
     }
 
 
+def test_responses_lite_request_always_sends_reasoning_context_when_thinking_disabled():
+    provider = OpenAICodexResponsesProvider(
+        ProviderConfig(model="gpt-5.6-sol", provider="openai-codex", thinking_level="none")
+    )
+
+    body = provider._build_request_body([], None, None, None)
+
+    assert body["reasoning"] == {"effort": "none", "summary": "auto", "context": "all_turns"}
+
+
+def test_responses_lite_request_always_sends_reasoning_context_when_thinking_unset():
+    provider = OpenAICodexResponsesProvider(
+        ProviderConfig(model="gpt-5.6-sol", provider="openai-codex", thinking_level=None)
+    )
+
+    body = provider._build_request_body([], None, None, None)
+
+    assert body["reasoning"] == {"effort": "none", "summary": "auto", "context": "all_turns"}
+
+
 def test_responses_lite_headers_and_websocket_metadata():
     provider = OpenAICodexResponsesProvider(
         ProviderConfig(model="gpt-5.6-sol", provider="openai-codex")
