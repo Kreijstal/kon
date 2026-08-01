@@ -1,6 +1,7 @@
+from kon import config as kon_config
 from kon.llm import resolve_provider_api_type
 from kon.llm.models import ApiType
-from kon.runtime import default_base_url_for_api
+from kon.runtime import ConversationRuntime, default_base_url_for_api
 
 
 def test_resolve_provider_api_type_known_provider():
@@ -26,3 +27,53 @@ def testdefault_base_url_for_api_openai_completions(monkeypatch):
 
 def testdefault_base_url_for_api_non_openai_completions():
     assert default_base_url_for_api(ApiType.ANTHROPIC_COPILOT) is None
+
+
+def _runtime(
+    monkeypatch,
+    *,
+    base_url=None,
+    default_provider="deepseek",
+    default_base_url="https://proxy.example.com/v1",
+):
+    monkeypatch.setattr(kon_config.llm, "default_provider", default_provider)
+    monkeypatch.setattr(kon_config.llm, "default_base_url", default_base_url)
+    rt = ConversationRuntime.__new__(ConversationRuntime)
+    rt.base_url = base_url
+    rt.api_key = None
+    rt.openai_compat_auth_mode = None
+    rt.anthropic_compat_auth_mode = None
+    rt.thinking_level = "none"
+    return rt
+
+
+def test_non_default_provider_model_uses_its_own_base_url(monkeypatch):
+    rt = _runtime(monkeypatch)
+
+    _, url = rt._model_api_and_base_url("gpt-5.6-luna", "openai-codex")
+
+    assert url == "https://chatgpt.com/backend-api"
+
+
+def test_model_without_explicit_provider_resolves_own_provider_base_url(monkeypatch):
+    rt = _runtime(monkeypatch)
+
+    _, url = rt._model_api_and_base_url("gpt-5.6-sol", None)
+
+    assert url == "https://chatgpt.com/backend-api"
+
+
+def test_default_provider_keeps_config_base_url_override(monkeypatch):
+    rt = _runtime(monkeypatch)
+
+    _, url = rt._model_api_and_base_url("deepseek-v4-flash", "deepseek")
+
+    assert url == "https://proxy.example.com/v1"
+
+
+def test_explicit_base_url_wins_over_model_default(monkeypatch):
+    rt = _runtime(monkeypatch, base_url="http://localhost:11434/v1")
+
+    _, url = rt._model_api_and_base_url("gpt-5.6-luna", "openai-codex")
+
+    assert url == "http://localhost:11434/v1"

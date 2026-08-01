@@ -128,7 +128,11 @@ class Kon(
             else (config.llm.default_provider if model is None else None)
         )
         self._api_key = api_key
-        self._base_url = base_url or config.llm.default_base_url or None
+        # The config's default_base_url is applied inside the runtime for the
+        # default provider only; passing it here would misroute explicitly
+        # selected models from other providers (e.g. openai-codex) to the
+        # default provider's host.
+        self._base_url = base_url or None
         self._resume_session = resume_session
         self._continue_recent = continue_recent
         initial_thinking_level = thinking_level or config.llm.default_thinking_level

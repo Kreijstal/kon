@@ -7,6 +7,7 @@ All notable changes to this project will be documented in this file.
 ### Fixed
 
 - Fixed OpenAI Codex Responses Lite error `requires reasoning.context to be all_turns` by always sending `reasoning.context: "all_turns"` for GPT-5.6 Codex models, even when thinking is disabled.
+- Fixed `kon -m <model> --provider <provider>` routing requests for non-default providers to the config's `default_base_url` host (e.g. selecting `gpt-5.6-luna`/`openai-codex` while `default_base_url` points at DeepSeek caused 401 "api key invalid" errors). The config base URL override now applies only to the configured default provider.
 
 ## 0.4.2 - 2026-07-20
 

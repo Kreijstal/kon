@@ -118,10 +118,27 @@ class ConversationRuntime:
         self, model: str, provider: str | None
     ) -> tuple[ApiType, str | None]:
         model_info = get_model(model, provider)
+
+        # `default_base_url` is an override for the configured default provider
+        # only. When a different provider is in effect (e.g. a catalog model
+        # whose provider differs from the default was selected), use that
+        # model's own endpoint instead of routing requests to the default
+        # provider's host.
+        effective_provider = provider
+        if effective_provider is None:
+            effective_provider = (
+                model_info.provider if model_info is not None else kon_config.llm.default_provider
+            )
+        config_override = (
+            kon_config.llm.default_base_url
+            if effective_provider == kon_config.llm.default_provider
+            else None
+        )
+
         if model_info:
-            return model_info.api, self.base_url or model_info.base_url
+            return model_info.api, self.base_url or config_override or model_info.base_url
         api_type = resolve_provider_api_type(provider)
-        return api_type, self.base_url or default_base_url_for_api(api_type)
+        return api_type, self.base_url or config_override or default_base_url_for_api(api_type)
 
     def _new_agent(
         self, provider: BaseProvider, session: Session, context: Context | None = None
